@@ -1,0 +1,27 @@
+spring:
+  application:
+    name: search-service
+  config:
+    import: optional:configserver:${CONFIG_SERVER_URL:http://localhost:8888}
+  cloud:
+    config:
+      fail-fast: false
+      label: ${CONFIG_SERVER_GIT_LABEL:main}
+      username: ${CONFIG_SERVER_USERNAME:config-client}
+      password: ${CONFIG_SERVER_PASSWORD:changeit}
+  profiles:
+    active: ${APP_ENV:dev}
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${AUTH_ISSUER_URI:http://localhost:8081}
+          jwk-set-uri: ${AUTH_JWK_SET_URI:${AUTH_ISSUER_URI:http://localhost:8081}/.well-known/jwks.json}
+
+server:
+  port: ${SERVER_PORT:8085}
+
+eureka:
+  client:
+    service-url:
+      defaultZone: ${EUREKA_CLIENT_SERVICEURL_DEFAULTZONE:http://localhost:8761/eureka/}

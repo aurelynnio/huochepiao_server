@@ -1,0 +1,36 @@
+spring:
+  application:
+    name: order-service
+  config:
+    import: optional:configserver:${CONFIG_SERVER_URL:http://localhost:8888}
+  cloud:
+    config:
+      fail-fast: false
+      label: ${CONFIG_SERVER_GIT_LABEL:main}
+      username: ${CONFIG_SERVER_USERNAME:config-client}
+      password: ${CONFIG_SERVER_PASSWORD:changeit}
+  profiles:
+    active: ${APP_ENV:dev}
+  datasource:
+    url: ${ORDER_DB_URL:jdbc:mysql://localhost:3306/order_service?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC}
+    username: ${ORDER_DB_USERNAME:root}
+    password: ${ORDER_DB_PASSWORD:}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  jpa:
+    hibernate:
+      ddl-auto: update
+    open-in-view: false
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${AUTH_ISSUER_URI:http://localhost:8081}
+          jwk-set-uri: ${AUTH_JWK_SET_URI:${AUTH_ISSUER_URI:http://localhost:8081}/.well-known/jwks.json}
+
+server:
+  port: ${SERVER_PORT:8083}
+
+eureka:
+  client:
+    service-url:
+      defaultZone: ${EUREKA_CLIENT_SERVICEURL_DEFAULTZONE:http://localhost:8761/eureka/}

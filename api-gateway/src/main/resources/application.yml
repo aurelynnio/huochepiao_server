@@ -1,0 +1,85 @@
+spring:
+  application:
+    name: api-gateway
+  config:
+    import: optional:configserver:${CONFIG_SERVER_URL:http://localhost:8888}
+  cloud:
+    config:
+      fail-fast: false
+      label: ${CONFIG_SERVER_GIT_LABEL:main}
+      username: ${CONFIG_SERVER_USERNAME:config-client}
+      password: ${CONFIG_SERVER_PASSWORD:changeit}
+    gateway:
+      server:
+        webflux:
+          globalcors:
+            cors-configurations:
+              "[/**]":
+                allowed-origins:
+                  - "http://localhost:3000"
+                  - "http://127.0.0.1:3000"
+                allowed-methods:
+                  - GET
+                  - POST
+                  - PUT
+                  - PATCH
+                  - DELETE
+                  - OPTIONS
+                allowed-headers: "*"
+                allow-credentials: true
+          routes:
+            - id: search-service
+              uri: http://search-service:8085
+              predicates:
+                - Path=/api/search/tickets,/api/search/tickets/**
+            - id: user-auth-service
+              uri: http://user-service:8081
+              predicates:
+                - Path=/api/users/login,/api/users/register,/api/users/logout
+              filters:
+                - StripPrefix=2
+                - PrefixPath=/v1
+            - id: user-service
+              uri: http://user-service:8081
+              predicates:
+                - Path=/api/users,/api/users/**
+              filters:
+                - StripPrefix=1
+                - PrefixPath=/v1
+            - id: ticket-service
+              uri: http://ticket-service:8086
+              predicates:
+                - Path=/api/tickets,/api/tickets/**
+              filters:
+                - StripPrefix=1
+                - PrefixPath=/v1
+            - id: order-service
+              uri: http://order-service:8083
+              predicates:
+                - Path=/api/orders,/api/orders/**
+              filters:
+                - StripPrefix=1
+                - PrefixPath=/v1
+            - id: payment-service
+              uri: http://payment-service:8084
+              predicates:
+                - Path=/api/payments,/api/payments/**
+              filters:
+                - StripPrefix=1
+                - PrefixPath=/v1
+  profiles:
+    active: ${APP_ENV:dev}
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${AUTH_ISSUER_URI:http://localhost:8081}
+          jwk-set-uri: ${AUTH_JWK_SET_URI:${AUTH_ISSUER_URI:http://localhost:8081}/.well-known/jwks.json}
+
+eureka:
+  client:
+    service-url:
+      defaultZone: ${EUREKA_CLIENT_SERVICEURL_DEFAULTZONE:http://localhost:8761/eureka/}
+
+server:
+  port: ${SERVER_PORT:8080}

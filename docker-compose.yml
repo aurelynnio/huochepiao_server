@@ -1,0 +1,290 @@
+services:
+  config-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        MODULE: config-server
+    container_name: config-server
+    restart: unless-stopped
+    environment:
+      CONFIG_SERVER_PORT: 8888
+      CONFIG_SERVER_GIT_URI: https://github.com/codexmmxxvi/microservice_config
+      CONFIG_SERVER_GIT_LABEL: main
+      CONFIG_SERVER_GIT_USERNAME: ""
+      CONFIG_SERVER_GIT_PASSWORD: ""
+      CONFIG_SERVER_GIT_CLONE_ON_START: "false"
+      CONFIG_SERVER_USERNAME: config-client
+      CONFIG_SERVER_PASSWORD: changeit
+      SPRING_PROFILES_ACTIVE: native
+      CONFIG_SERVER_NATIVE_SEARCH_LOCATIONS: file:/config-repo
+    ports:
+      - "8888:8888"
+    volumes:
+      - ./config-repo:/config-repo:ro
+    networks:
+      - microservice-network
+
+  discovery-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        MODULE: discovery-service
+    container_name: discovery-service
+    restart: unless-stopped
+    environment:
+      APP_ENV: dev
+      CONFIG_SERVER_URL: http://config-server:8888
+      CONFIG_SERVER_GIT_LABEL: main
+      CONFIG_SERVER_USERNAME: config-client
+      CONFIG_SERVER_PASSWORD: changeit
+    ports:
+      - "8761:8761"
+    depends_on:
+      - config-server
+    networks:
+      - microservice-network
+
+  api-gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        MODULE: api-gateway
+    container_name: api-gateway
+    restart: unless-stopped
+    environment:
+      APP_ENV: dev
+      CONFIG_SERVER_URL: http://config-server:8888
+      CONFIG_SERVER_GIT_LABEL: main
+      CONFIG_SERVER_USERNAME: config-client
+      CONFIG_SERVER_PASSWORD: changeit
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://discovery-service:8761/eureka/
+      AUTH_ISSUER_URI: http://user-service:8081
+    ports:
+      - "8080:8080"
+    depends_on:
+      - config-server
+      - discovery-service
+    networks:
+      - microservice-network
+
+  order-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        MODULE: order-service
+    container_name: order-service
+    restart: unless-stopped
+    environment:
+      APP_ENV: dev
+      CONFIG_SERVER_URL: http://config-server:8888
+      CONFIG_SERVER_GIT_LABEL: main
+      CONFIG_SERVER_USERNAME: config-client
+      CONFIG_SERVER_PASSWORD: changeit
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://discovery-service:8761/eureka/
+      AUTH_ISSUER_URI: http://user-service:8081
+      ORDER_DB_URL: jdbc:mysql://sql-service:3306/order_service?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+      ORDER_DB_USERNAME: root
+      ORDER_DB_PASSWORD: 123456
+    depends_on:
+      - config-server
+      - discovery-service
+      - sql-service
+    networks:
+      - microservice-network
+
+  payment-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        MODULE: payment-service
+    container_name: payment-service
+    restart: unless-stopped
+    environment:
+      APP_ENV: dev
+      CONFIG_SERVER_URL: http://config-server:8888
+      CONFIG_SERVER_GIT_LABEL: main
+      CONFIG_SERVER_USERNAME: config-client
+      CONFIG_SERVER_PASSWORD: changeit
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://discovery-service:8761/eureka/
+      AUTH_ISSUER_URI: http://user-service:8081
+      PAYMENT_DB_URL: jdbc:mysql://sql-service:3306/payment_service?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+      PAYMENT_DB_USERNAME: root
+      PAYMENT_DB_PASSWORD: 123456
+    depends_on:
+      - config-server
+      - discovery-service
+      - sql-service
+    networks:
+      - microservice-network
+
+  user-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        MODULE: user-service
+    container_name: user-service
+    restart: unless-stopped
+    environment:
+      APP_ENV: dev
+      CONFIG_SERVER_URL: http://config-server:8888
+      CONFIG_SERVER_GIT_LABEL: main
+      CONFIG_SERVER_USERNAME: config-client
+      CONFIG_SERVER_PASSWORD: changeit
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://discovery-service:8761/eureka/
+      AUTH_ISSUER_URI: http://user-service:8081
+      JWT_ISSUER: http://user-service:8081
+      USER_DB_URL: jdbc:mysql://sql-service:3306/user_service?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+      USER_DB_USERNAME: root
+      USER_DB_PASSWORD: 123456
+    depends_on:
+      - config-server
+      - discovery-service
+      - sql-service
+    networks:
+      - microservice-network
+
+  ticket-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        MODULE: ticket-service
+    container_name: ticket-service
+    restart: unless-stopped
+    environment:
+      APP_ENV: dev
+      CONFIG_SERVER_URL: http://config-server:8888
+      CONFIG_SERVER_GIT_LABEL: main
+      CONFIG_SERVER_USERNAME: config-client
+      CONFIG_SERVER_PASSWORD: changeit
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://discovery-service:8761/eureka/
+      AUTH_ISSUER_URI: http://user-service:8081
+      SEARCH_SERVICE_URL: http://search-service:8085
+      TICKET_MONGODB_URI: mongodb://admin:123456@mongodb-service:27017/ticket-service?authSource=admin
+      REDIS_HOST: redis-service
+      REDIS_PORT: 6379
+      REDIS_DATABASE: 0
+      SPRING_DATA_REDIS_PASSWORD: 123456
+    depends_on:
+      - config-server
+      - discovery-service
+      - mongodb-service
+      - redis-service
+    networks:
+      - microservice-network
+
+  search-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        MODULE: search-service
+    container_name: search-service
+    restart: unless-stopped
+    environment:
+      APP_ENV: dev
+      CONFIG_SERVER_URL: http://config-server:8888
+      CONFIG_SERVER_GIT_LABEL: main
+      CONFIG_SERVER_USERNAME: config-client
+      CONFIG_SERVER_PASSWORD: changeit
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://discovery-service:8761/eureka/
+      AUTH_ISSUER_URI: http://user-service:8081
+      ELASTICSEARCH_URL: http://elasticsearch-service:9200
+    ports:
+      - "8087:8085"
+    depends_on:
+      - config-server
+      - discovery-service
+      - elasticsearch-service
+    networks:
+      - microservice-network
+
+  redis-service:
+    container_name: redis-service
+    image: redis:7.4-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    command:
+      - redis-server
+      - --requirepass
+      - "123456"
+      - --save
+      - "60"
+      - "1"
+    volumes:
+      - redis_data:/data
+    networks:
+      - microservice-network
+
+  mongodb-service:
+    container_name: mongodb-service
+    image: mongo:latest
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: 123456
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+    networks:
+      - microservice-network
+
+  sql-service:
+    container_name: sql-service
+    image: mysql:8.0.45
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: 123456
+      MYSQL_ROOT_HOST: "%"
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data_v2:/var/lib/mysql
+    networks:
+      - microservice-network
+
+  elasticsearch-service:
+    container_name: elasticsearch-service
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.13.2
+    restart: unless-stopped
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "false"
+    ports:
+      - "9200:9200"
+    volumes:
+      - esdata:/usr/share/elasticsearch/data
+    networks:
+      - microservice-network
+
+  kibana-service:
+    container_name: kibana-service
+    image: docker.elastic.co/kibana/kibana:8.13.2
+    restart: unless-stopped
+    ports:
+      - "5601:5601"
+    environment:
+      ELASTICSEARCH_HOSTS: http://elasticsearch-service:9200
+    depends_on:
+      - elasticsearch-service
+    networks:
+      - microservice-network
+
+volumes:
+  redis_data:
+  mongodb_data:
+  mysql_data:
+  mysql_data_v2:
+  esdata:
+
+networks:
+  microservice-network:
+    driver: bridge

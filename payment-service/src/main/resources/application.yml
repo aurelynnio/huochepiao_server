@@ -1,0 +1,47 @@
+spring:
+  application:
+    name: payment-service
+  config:
+    import: optional:configserver:${CONFIG_SERVER_URL:http://localhost:8888}
+  cloud:
+    config:
+      fail-fast: false
+      label: ${CONFIG_SERVER_GIT_LABEL:main}
+      username: ${CONFIG_SERVER_USERNAME:config-client}
+      password: ${CONFIG_SERVER_PASSWORD:changeit}
+  profiles:
+    active: ${APP_ENV:dev}
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${AUTH_ISSUER_URI:http://localhost:8081}
+          jwk-set-uri: ${AUTH_JWK_SET_URI:${AUTH_ISSUER_URI:http://localhost:8081}/.well-known/jwks.json}
+  datasource:
+    url: ${PAYMENT_DB_URL:jdbc:mysql://localhost:3306/payment_service?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC}
+    username: ${PAYMENT_DB_USERNAME:root}
+    password: ${PAYMENT_DB_PASSWORD:123456}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  jpa:
+    hibernate:
+      ddl-auto: update
+    open-in-view: false
+
+server:
+  port: ${SERVER_PORT:8084}
+
+eureka:
+  client:
+    service-url:
+      defaultZone: ${EUREKA_CLIENT_SERVICEURL_DEFAULTZONE:http://localhost:8761/eureka/}
+
+app:
+  client:
+    payment-result-url: ${PAYMENT_CLIENT_RESULT_URL:http://localhost:3000/payment-result}
+
+vnpay:
+  pay-url: ${VNPAY_PAY_URL:https://sandbox.vnpayment.vn/paymentv2/vpcpay.html}
+  return-url: ${VNPAY_RETURN_URL:/api/payments/vnpay/callback}
+  tmn-code: ${VNPAY_TMN_CODE:}
+  hash-secret: ${VNPAY_HASH_SECRET:}
+  api-url: ${VNPAY_API_URL:https://sandbox.vnpayment.vn/merchant_webapi/api/transaction}

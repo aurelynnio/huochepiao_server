@@ -1,0 +1,27 @@
+server:
+  port: ${CONFIG_SERVER_PORT:8888}
+
+spring:
+  application:
+    name: config-server
+  security:
+    user:
+      name: ${CONFIG_SERVER_USERNAME:config-client}
+      password: ${CONFIG_SERVER_PASSWORD:changeit}
+  cloud:
+    config:
+      server:
+        git:
+          uri: ${CONFIG_SERVER_GIT_URI:https://github.com/codexmmxxvi/microservice_config}
+          default-label: ${CONFIG_SERVER_GIT_LABEL:main}
+          username: ${CONFIG_SERVER_GIT_USERNAME:}
+          password: ${CONFIG_SERVER_GIT_PASSWORD:}
+          search-paths:
+            - .
+            - "{profile}"
+            - "config"
+            - "config/{profile}"
+          clone-on-start: ${CONFIG_SERVER_GIT_CLONE_ON_START:false}
+          force-pull: true
+        native:
+          search-locations: ${CONFIG_SERVER_NATIVE_SEARCH_LOCATIONS:file:./config-repo}
