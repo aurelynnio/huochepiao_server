@@ -175,25 +175,14 @@ jobs:
             aws ecr get-login-password --region "$AWS_REGION" | docker login --username AWS --password-stdin "$ECR_REGISTRY"
 
             echo "Writing Docker Compose ECR override..."
-            cat > docker-compose.ecr.yml <<EOF
-            services:
-              config-server:
-                image: ${ECR_REGISTRY}/${ECR_REPOSITORY}:config-server-${IMAGE_TAG}
-              discovery-service:
-                image: ${ECR_REGISTRY}/${ECR_REPOSITORY}:discovery-service-${IMAGE_TAG}
-              api-gateway:
-                image: ${ECR_REGISTRY}/${ECR_REPOSITORY}:api-gateway-${IMAGE_TAG}
-              order-service:
-                image: ${ECR_REGISTRY}/${ECR_REPOSITORY}:order-service-${IMAGE_TAG}
-              payment-service:
-                image: ${ECR_REGISTRY}/${ECR_REPOSITORY}:payment-service-${IMAGE_TAG}
-              search-service:
-                image: ${ECR_REGISTRY}/${ECR_REPOSITORY}:search-service-${IMAGE_TAG}
-              ticket-service:
-                image: ${ECR_REGISTRY}/${ECR_REPOSITORY}:ticket-service-${IMAGE_TAG}
-              user-service:
-                image: ${ECR_REGISTRY}/${ECR_REPOSITORY}:user-service-${IMAGE_TAG}
-            EOF
+            printf 'services:\n' > docker-compose.ecr.yml
+            for SERVICE in $SERVICES; do
+              printf '  %s:\n' "$SERVICE" >> docker-compose.ecr.yml
+              printf '    image: "%s/%s:%s-%s"\n' "$ECR_REGISTRY" "$ECR_REPOSITORY" "$SERVICE" "$IMAGE_TAG" >> docker-compose.ecr.yml
+            done
+
+            echo "Generated Docker Compose ECR override:"
+            sed -n '1,80p' docker-compose.ecr.yml
 
             echo "Pulling service images..."
             for SERVICE in $SERVICES; do
