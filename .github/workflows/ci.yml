@@ -151,6 +151,7 @@ jobs:
             user-service
             "
 
+            echo "Preparing remote app directory..."
             if [ -d "$REMOTE_APP_DIR/.git" ]; then
               cd "$REMOTE_APP_DIR"
               git fetch origin main
@@ -160,9 +161,12 @@ jobs:
               git clone --branch main "$REPOSITORY_URL" "$REMOTE_APP_DIR"
               cd "$REMOTE_APP_DIR"
             else
+              BACKUP_DIR="${REMOTE_APP_DIR}.bak.$(date +%Y%m%d%H%M%S)"
               echo "$REMOTE_APP_DIR exists, but it is not a git repository."
-              echo "Move it aside or clone $REPOSITORY_URL into $REMOTE_APP_DIR before deploying."
-              exit 1
+              echo "Moving existing directory to $BACKUP_DIR"
+              mv "$REMOTE_APP_DIR" "$BACKUP_DIR"
+              git clone --branch main "$REPOSITORY_URL" "$REMOTE_APP_DIR"
+              cd "$REMOTE_APP_DIR"
             fi
 
             echo "Logging in to ECR..."
