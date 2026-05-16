@@ -137,7 +137,7 @@ jobs:
             ECR_REGISTRY="${{ steps.login-ecr.outputs.registry }}"
             ECR_REPOSITORY="${{ vars.ECR_REPOSITORY }}"
             IMAGE_TAG="${{ steps.image.outputs.IMAGE_TAG }}"
-            REMOTE_APP_DIR="$HOME/huochepiao"
+            REMOTE_APP_DIR="/srv/huochepiao"
             REMOTE_BASE_DIR="$(dirname "$REMOTE_APP_DIR")"
             REPOSITORY_URL="https://github.com/${{ github.repository }}.git"
 
