@@ -206,8 +206,17 @@ jobs:
 
             echo "Pulling service images..."
             for SERVICE in $SERVICES; do
-              docker pull "${ECR_REGISTRY}/${ECR_REPOSITORY}:${SERVICE}-${IMAGE_TAG}"
+              IMAGE_URI="${ECR_REGISTRY}/${ECR_REPOSITORY}:${SERVICE}-${IMAGE_TAG}"
+              echo "Pulling $IMAGE_URI"
+              docker pull "$IMAGE_URI"
             done
+
+            echo "Docker versions:"
+            docker --version
+            docker compose version
+
+            echo "Validating Docker Compose files..."
+            docker compose -f docker-compose.yml -f docker-compose.ecr.yml config --quiet
 
             echo "Starting services with Docker Compose..."
             docker compose -f docker-compose.yml -f docker-compose.ecr.yml up -d --no-build
