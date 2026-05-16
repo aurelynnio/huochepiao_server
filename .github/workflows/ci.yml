@@ -141,16 +141,7 @@ jobs:
             REMOTE_BASE_DIR="$(dirname "$REMOTE_APP_DIR")"
             REPOSITORY_URL="https://github.com/${{ github.repository }}.git"
 
-            SERVICES="
-            config-server
-            discovery-service
-            api-gateway
-            order-service
-            payment-service
-            search-service
-            ticket-service
-            user-service
-            "
+            SERVICES="config-server discovery-service api-gateway order-service payment-service search-service ticket-service user-service"
 
             echo "Preparing remote app directory..."
             echo "Remote app directory: $REMOTE_APP_DIR"
