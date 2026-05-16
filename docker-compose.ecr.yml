@@ -1,0 +1,17 @@
+services:
+  config-server:
+    image: "${ECR_REGISTRY}/${ECR_REPOSITORY}:config-server-${IMAGE_TAG}"
+  discovery-service:
+    image: "${ECR_REGISTRY}/${ECR_REPOSITORY}:discovery-service-${IMAGE_TAG}"
+  api-gateway:
+    image: "${ECR_REGISTRY}/${ECR_REPOSITORY}:api-gateway-${IMAGE_TAG}"
+  order-service:
+    image: "${ECR_REGISTRY}/${ECR_REPOSITORY}:order-service-${IMAGE_TAG}"
+  payment-service:
+    image: "${ECR_REGISTRY}/${ECR_REPOSITORY}:payment-service-${IMAGE_TAG}"
+  search-service:
+    image: "${ECR_REGISTRY}/${ECR_REPOSITORY}:search-service-${IMAGE_TAG}"
+  ticket-service:
+    image: "${ECR_REGISTRY}/${ECR_REPOSITORY}:ticket-service-${IMAGE_TAG}"
+  user-service:
+    image: "${ECR_REGISTRY}/${ECR_REPOSITORY}:user-service-${IMAGE_TAG}"
