@@ -11,6 +11,7 @@ import codex.mmxxvi.entity.Ticket;
 import codex.mmxxvi.entity.TicketItem;
 import codex.mmxxvi.exception.AppExceptions;
 import codex.mmxxvi.repository.TicketRepository;
+import codex.mmxxvi.service.CachingService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -37,6 +38,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -53,11 +55,14 @@ class TicketServiceImplTest {
     @Mock
     private TicketSearchIndexClient ticketSearchIndexClient;
 
+    @Mock
+    private CachingService cachingService;
+
     private TicketServiceImpl ticketService;
 
     @BeforeEach
     void setUp() {
-        ticketService = new TicketServiceImpl(ticketRepository, ticketSearchIndexClient);
+        ticketService = new TicketServiceImpl(ticketRepository, ticketSearchIndexClient, cachingService);
     }
 
     @Test
@@ -85,6 +90,21 @@ class TicketServiceImplTest {
     }
 
     @Test
+    void getTicketReturnsCachedTicketWithoutQueryingRepository() {
+        ResponseTicket cachedTicket = ResponseTicket.builder()
+                .id(TICKET_ID)
+                .title("Cached concert")
+                .build();
+        when(cachingService.getObject("ticket-service:tickets:" + TICKET_ID, ResponseTicket.class))
+                .thenReturn(cachedTicket);
+
+        ResponseTicket response = withAuth(ticketService.getTicket(TICKET_ID), USER_ID, 0, "ticket.read");
+
+        assertThat(response).isEqualTo(cachedTicket);
+        verify(ticketRepository, never()).findTicketById(TICKET_ID);
+    }
+
+    @Test
     void updateTicketRequiresAdminRoleAndSyncsSearchIndex() {
         Ticket ticket = ticket("Old title");
         UpdateTicketRequest request = UpdateTicketRequest.builder()
@@ -104,6 +124,8 @@ class TicketServiceImplTest {
         verify(ticketSearchIndexClient).indexTicket(eq("Bearer ticket-token"), requestCaptor.capture());
         assertThat(requestCaptor.getValue().getId()).isEqualTo(TICKET_ID);
         assertThat(requestCaptor.getValue().getTitle()).isEqualTo("New title");
+        verify(cachingService).delete("ticket-service:tickets:" + TICKET_ID);
+        verify(cachingService).deleteByPattern("ticket-service:tickets:pages:*");
     }
 
     @Test

@@ -7,6 +7,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 import org.springframework.data.domain.Page;
@@ -30,6 +31,7 @@ import codex.mmxxvi.entity.Ticket;
 import codex.mmxxvi.entity.TicketItem;
 import codex.mmxxvi.exception.AppExceptions;
 import codex.mmxxvi.repository.TicketRepository;
+import codex.mmxxvi.service.CachingService;
 import codex.mmxxvi.service.TicketService;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
@@ -37,13 +39,22 @@ import reactor.core.scheduler.Schedulers;
 @Service
 public class TicketServiceImpl implements TicketService {
     private static final int ROLE_ADMIN = 1;
+    private static final String TICKET_CACHE_PREFIX = "ticket-service:tickets:";
+    private static final String TICKET_LIST_CACHE_PREFIX = TICKET_CACHE_PREFIX + "pages:";
+    private static final long TICKET_CACHE_TTL_MINUTES = 10L;
 
     private final TicketRepository ticketRepository;
     private final TicketSearchIndexClient ticketSearchIndexClient;
+    private final CachingService cachingService;
 
-    public TicketServiceImpl(TicketRepository ticketRepository, TicketSearchIndexClient ticketSearchIndexClient) {
+    public TicketServiceImpl(
+            TicketRepository ticketRepository,
+            TicketSearchIndexClient ticketSearchIndexClient,
+            CachingService cachingService
+    ) {
         this.ticketRepository = ticketRepository;
         this.ticketSearchIndexClient = ticketSearchIndexClient;
+        this.cachingService = cachingService;
     }
 
     private ResponseTicket toResponse(Ticket ticket) {
@@ -62,9 +73,15 @@ public class TicketServiceImpl implements TicketService {
             Mono.fromCallable(() -> {
                     requireAnyScope(authContext, "ticket.read", "ticket.write");
 
+                    String cacheKey = ticketListCacheKey(pageRequestDto);
+                    PageResponse<ResponseTicket> cachedResponse = getCachedPage(cacheKey);
+                    if (cachedResponse != null) {
+                        return cachedResponse;
+                    }
+
                     Pageable pageable = pageRequestDto.getPageable();
                     Page<Ticket> ticketPage = ticketRepository.findAll(pageable);
-                    return PageResponse.<ResponseTicket>builder()
+                    PageResponse<ResponseTicket> response = PageResponse.<ResponseTicket>builder()
                         .content(ticketPage.getContent().stream().map(this::toResponse).toList())
                         .pageNo(ticketPage.getNumber())
                         .pageSize(ticketPage.getSize())
@@ -72,6 +89,8 @@ public class TicketServiceImpl implements TicketService {
                         .totalPages(ticketPage.getTotalPages())
                         .last(ticketPage.isLast())
                         .build();
+                    cachingService.setObject(cacheKey, response, TICKET_CACHE_TTL_MINUTES, TimeUnit.MINUTES);
+                    return response;
                 })
                 .subscribeOn(Schedulers.boundedElastic())
         );
@@ -82,7 +101,17 @@ public class TicketServiceImpl implements TicketService {
         return resolveAuthContext().flatMap(authContext ->
                 Mono.fromCallable(() -> {
                             requireAnyScope(authContext, "ticket.read", "ticket.write");
-                            return ticketRepository.findTicketById(ticketId);
+                            String cacheKey = ticketCacheKey(ticketId);
+                            ResponseTicket cachedTicket = cachingService.getObject(cacheKey, ResponseTicket.class);
+                            if (cachedTicket != null) {
+                                return cachedTicket;
+                            }
+
+                            ResponseTicket ticket = ticketRepository.findTicketById(ticketId);
+                            if (ticket != null) {
+                                cachingService.setObject(cacheKey, ticket, TICKET_CACHE_TTL_MINUTES, TimeUnit.MINUTES);
+                            }
+                            return ticket;
                         })
                         .subscribeOn(Schedulers.boundedElastic())
         );
@@ -125,6 +154,7 @@ public class TicketServiceImpl implements TicketService {
                             }
 
                             var updatedTicket = ticketRepository.save(oldTicket);
+                            invalidateTicketCaches(ticketId);
                             syncTicketToSearch(updatedTicket, authContext);
                             return toResponse(updatedTicket);
                         })
@@ -144,6 +174,7 @@ public class TicketServiceImpl implements TicketService {
 
                     ticket.setTicketItems(toTicketItems(ticketId, updateTicketItemsRequest.getTicketItems()));
                     var updatedTicket = ticketRepository.save(ticket);
+                    invalidateTicketCaches(ticketId);
                     syncTicketToSearch(updatedTicket, authContext);
                     return toResponse(updatedTicket);
                 })
@@ -159,6 +190,7 @@ public class TicketServiceImpl implements TicketService {
 
             return Mono.fromRunnable(() -> {
                         ticketRepository.deleteById(ticketId);
+                        invalidateTicketCaches(ticketId);
                         removeTicketFromSearch(ticketId, authContext);
                     })
                     .subscribeOn(Schedulers.boundedElastic())
@@ -180,6 +212,31 @@ public class TicketServiceImpl implements TicketService {
         } catch (Exception ex) {
             throw new AppExceptions.BadGatewayException("Failed to delete ticket from search-service", ex);
         }
+    }
+
+    private String ticketCacheKey(UUID ticketId) {
+        return TICKET_CACHE_PREFIX + ticketId;
+    }
+
+    private String ticketListCacheKey(PageRequestDto pageRequestDto) {
+        return TICKET_LIST_CACHE_PREFIX
+                + pageRequestDto.getPageNo()
+                + ":"
+                + pageRequestDto.getPageSize()
+                + ":"
+                + pageRequestDto.getSortBy()
+                + ":"
+                + pageRequestDto.getSortDir().toLowerCase();
+    }
+
+    @SuppressWarnings("unchecked")
+    private PageResponse<ResponseTicket> getCachedPage(String cacheKey) {
+        return cachingService.getObject(cacheKey, PageResponse.class);
+    }
+
+    private void invalidateTicketCaches(UUID ticketId) {
+        cachingService.delete(ticketCacheKey(ticketId));
+        cachingService.deleteByPattern(TICKET_LIST_CACHE_PREFIX + "*");
     }
 
     private IndexTicketRequest toIndexTicketRequest(Ticket ticket) {

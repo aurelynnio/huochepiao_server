@@ -9,7 +9,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class ConfigServerTest {
 
     @Test
-    void applicationClassEnablesSpringCloudConfigServer() {
+    void applicationClassUsesExpectedAnnotations() {
         assertThat(ConfigServer.class.isAnnotationPresent(SpringBootApplication.class)).isTrue();
         assertThat(ConfigServer.class.isAnnotationPresent(EnableConfigServer.class)).isTrue();
     }

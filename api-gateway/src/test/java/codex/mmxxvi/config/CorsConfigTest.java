@@ -9,7 +9,8 @@ class CorsConfigTest {
 
     @Test
     void createsCorsWebFilter() {
-        CorsWebFilter filter = new CorsConfig().corsWebFilter();
+        CorsConfig corsConfig = new CorsConfig();
+        CorsWebFilter filter = corsConfig.corsWebFilter(corsConfig.corsConfigurationSource());
 
         assertThat(filter).isNotNull();
     }

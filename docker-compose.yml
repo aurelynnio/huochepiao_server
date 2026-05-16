@@ -9,19 +9,15 @@ services:
     restart: unless-stopped
     environment:
       CONFIG_SERVER_PORT: 8888
-      CONFIG_SERVER_GIT_URI: https://github.com/codexmmxxvi/microservice_config
+      CONFIG_SERVER_GIT_URI: https://github.com/aurelynnio/microservice_config.git
       CONFIG_SERVER_GIT_LABEL: main
       CONFIG_SERVER_GIT_USERNAME: ""
       CONFIG_SERVER_GIT_PASSWORD: ""
-      CONFIG_SERVER_GIT_CLONE_ON_START: "false"
+      CONFIG_SERVER_GIT_CLONE_ON_START: "true"
       CONFIG_SERVER_USERNAME: config-client
       CONFIG_SERVER_PASSWORD: changeit
-      SPRING_PROFILES_ACTIVE: native
-      CONFIG_SERVER_NATIVE_SEARCH_LOCATIONS: file:/config-repo
     ports:
       - "8888:8888"
-    volumes:
-      - ./config-repo:/config-repo:ro
     networks:
       - microservice-network
 

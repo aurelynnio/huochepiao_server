@@ -1,5 +1,7 @@
 package codex.mmxxvi.dto.response;
 
+import java.io.Serializable;
+
 import codex.mmxxvi.entity.TicketItem;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -14,7 +16,9 @@ import java.util.UUID;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class ResponseTicket {
+public class ResponseTicket implements Serializable {
+    private static final long serialVersionUID = 1L;
+
     private UUID id;
     private String title;
     private LocalDateTime dateStart;

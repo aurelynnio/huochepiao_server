@@ -13,5 +13,7 @@ public interface CachingService {
 
     void delete(String key);
 
+    void deleteByPattern(String pattern);
+
     boolean checkExist(String key);
 }

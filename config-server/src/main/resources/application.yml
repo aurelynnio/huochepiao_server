@@ -12,7 +12,7 @@ spring:
     config:
       server:
         git:
-          uri: ${CONFIG_SERVER_GIT_URI:https://github.com/codexmmxxvi/microservice_config}
+          uri: ${CONFIG_SERVER_GIT_URI:https://github.com/aurelynnio/microservice_config.git}
           default-label: ${CONFIG_SERVER_GIT_LABEL:main}
           username: ${CONFIG_SERVER_GIT_USERNAME:}
           password: ${CONFIG_SERVER_GIT_PASSWORD:}

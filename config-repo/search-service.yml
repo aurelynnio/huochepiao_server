@@ -1,0 +1,11 @@
+spring:
+  application:
+    name: search-service
+
+server:
+  port: ${SERVER_PORT:8085}
+
+search:
+  elasticsearch:
+    url: ${ELASTICSEARCH_URL:http://localhost:9200}
+    ticket-index: ${SEARCH_TICKET_INDEX:ticket-search}
