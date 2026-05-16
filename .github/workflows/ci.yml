@@ -138,6 +138,7 @@ jobs:
             ECR_REPOSITORY="${{ vars.ECR_REPOSITORY }}"
             IMAGE_TAG="${{ steps.image.outputs.IMAGE_TAG }}"
             REMOTE_APP_DIR="/srv/huochepiao"
+            REMOTE_BASE_DIR="$(dirname "$REMOTE_APP_DIR")"
             REPOSITORY_URL="https://github.com/${{ github.repository }}.git"
 
             SERVICES="
@@ -152,11 +153,35 @@ jobs:
             "
 
             echo "Preparing remote app directory..."
+            echo "Remote app directory: $REMOTE_APP_DIR"
+
+            if sudo -n true 2>/dev/null; then
+              SUDO="sudo"
+            else
+              SUDO=""
+            fi
+
+            if [ -n "$SUDO" ]; then
+              $SUDO mkdir -p "$REMOTE_BASE_DIR"
+              $SUDO chown "$USER:$USER" "$REMOTE_BASE_DIR"
+              if [ -e "$REMOTE_APP_DIR" ]; then
+                $SUDO chown -R "$USER:$USER" "$REMOTE_APP_DIR"
+              fi
+            else
+              mkdir -p "$REMOTE_BASE_DIR"
+            fi
+
             if [ -d "$REMOTE_APP_DIR/.git" ]; then
+              echo "Existing git repository found. Updating it..."
               cd "$REMOTE_APP_DIR"
               git fetch origin main
               git reset --hard origin/main
-            elif [ ! -d "$REMOTE_APP_DIR" ] || [ -z "$(ls -A "$REMOTE_APP_DIR" 2>/dev/null)" ]; then
+            elif [ ! -e "$REMOTE_APP_DIR" ]; then
+              echo "Remote app directory does not exist. Cloning repository..."
+              git clone --branch main "$REPOSITORY_URL" "$REMOTE_APP_DIR"
+              cd "$REMOTE_APP_DIR"
+            elif [ -d "$REMOTE_APP_DIR" ] && [ -z "$(find "$REMOTE_APP_DIR" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null || true)" ]; then
+              echo "Remote app directory is empty. Cloning repository..."
               rm -rf "$REMOTE_APP_DIR"
               git clone --branch main "$REPOSITORY_URL" "$REMOTE_APP_DIR"
               cd "$REMOTE_APP_DIR"
