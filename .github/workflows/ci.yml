@@ -138,6 +138,7 @@ jobs:
             ECR_REPOSITORY="${{ vars.ECR_REPOSITORY }}"
             IMAGE_TAG="${{ steps.image.outputs.IMAGE_TAG }}"
             REMOTE_APP_DIR="/srv/huochepiao"
+            REPOSITORY_URL="https://github.com/${{ github.repository }}.git"
 
             SERVICES="
             config-server
@@ -150,10 +151,19 @@ jobs:
             user-service
             "
 
-            cd "$REMOTE_APP_DIR"
-
-            git fetch origin main
-            git reset --hard origin/main
+            if [ -d "$REMOTE_APP_DIR/.git" ]; then
+              cd "$REMOTE_APP_DIR"
+              git fetch origin main
+              git reset --hard origin/main
+            elif [ ! -d "$REMOTE_APP_DIR" ] || [ -z "$(ls -A "$REMOTE_APP_DIR" 2>/dev/null)" ]; then
+              rm -rf "$REMOTE_APP_DIR"
+              git clone --branch main "$REPOSITORY_URL" "$REMOTE_APP_DIR"
+              cd "$REMOTE_APP_DIR"
+            else
+              echo "$REMOTE_APP_DIR exists, but it is not a git repository."
+              echo "Move it aside or clone $REPOSITORY_URL into $REMOTE_APP_DIR before deploying."
+              exit 1
+            fi
 
             echo "Logging in to ECR..."
             aws ecr get-login-password --region "$AWS_REGION" | docker login --username AWS --password-stdin "$ECR_REGISTRY"
