@@ -174,14 +174,17 @@ jobs:
             echo "Logging in to ECR..."
             aws ecr get-login-password --region "$AWS_REGION" | docker login --username AWS --password-stdin "$ECR_REGISTRY"
 
-            echo "Writing Docker Compose ECR override..."
-            printf 'services:\n' > docker-compose.ecr.yml
-            for SERVICE in $SERVICES; do
-              printf '  %s:\n' "$SERVICE" >> docker-compose.ecr.yml
-              printf '    image: "%s/%s:%s-%s"\n' "$ECR_REGISTRY" "$ECR_REPOSITORY" "$SERVICE" "$IMAGE_TAG" >> docker-compose.ecr.yml
-            done
+            export ECR_REGISTRY
+            export ECR_REPOSITORY
+            export IMAGE_TAG
 
-            echo "Generated Docker Compose ECR override:"
+            if [ ! -f docker-compose.ecr.yml ]; then
+              echo "docker-compose.ecr.yml was not found in $REMOTE_APP_DIR."
+              echo "Create it yourself before deploying, or commit it to the repository."
+              exit 1
+            fi
+
+            echo "Using Docker Compose ECR override:"
             sed -n '1,80p' docker-compose.ecr.yml
 
             echo "Pulling service images..."
