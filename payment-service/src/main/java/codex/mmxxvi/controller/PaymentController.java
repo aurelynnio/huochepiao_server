@@ -33,7 +33,7 @@ import java.util.UUID;
 public class PaymentController {
     private final PaymentService paymentService;
 
-    @Value("${app.client.payment-result-url:http://localhost:3000/payment-result}")
+    @Value("${app.client.payment-result-url:https://vetautet.app/payment-result}")
     private String paymentResultUrl;
 
     public PaymentController(PaymentService paymentService) {
