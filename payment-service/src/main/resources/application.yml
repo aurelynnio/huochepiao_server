@@ -40,7 +40,7 @@ app:
 
 vnpay:
   pay-url: ${VNPAY_PAY_URL:https://sandbox.vnpayment.vn/paymentv2/vpcpay.html}
-  return-url: ${VNPAY_RETURN_URL:https://vetautet.app/api/payments/vnpay/callback}
+  return-url: ${VNPAY_RETURN_URL:https://api.vetautet.app/api/payments/vnpay/callback}
   tmn-code: ${VNPAY_TMN_CODE:ASZ3R2I3}
   hash-secret: ${VNPAY_HASH_SECRET:69GLTLV9HI0UI11OT6HK7OVV3LKN6CCS}
   api-url: ${VNPAY_API_URL:https://sandbox.vnpayment.vn/merchant_webapi/api/transaction}
