@@ -50,6 +50,7 @@ public class PaymentServiceImpl implements PaymentService {
     private static final DateTimeFormatter VNPAY_PAY_DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyyMMddHHmmss");
     private static final String VNPAY_METHOD = "VNPAY";
     private static final int ROLE_ADMIN = 1;
+    private static final int COMPACT_UUID_LENGTH = 32;
 
     private final PaymentRepository paymentRepository;
     private final VNPayConfig vnPayConfig;
@@ -115,7 +116,7 @@ public class PaymentServiceImpl implements PaymentService {
         vnpParams.put("vnp_TmnCode", vnPayConfig.getTmnCode());
         vnpParams.put("vnp_Amount", String.valueOf(Math.multiplyExact(payment.getAmount(), 100L)));
         vnpParams.put("vnp_CurrCode", "VND");
-        vnpParams.put("vnp_TxnRef", payment.getTransactionId().toString());
+        vnpParams.put("vnp_TxnRef", toVnPayTxnRef(payment.getTransactionId()));
         vnpParams.put("vnp_OrderInfo", payment.getOrderId().toString());
         vnpParams.put("vnp_OrderType", orderType);
         vnpParams.put("vnp_Locale", "vn");
@@ -319,10 +320,8 @@ public class PaymentServiceImpl implements PaymentService {
             return -1;
         }
 
-        UUID transactionId;
-        try {
-            transactionId = UUID.fromString(transactionReference);
-        } catch (IllegalArgumentException ex) {
+        UUID transactionId = parseVnPayTxnRef(transactionReference);
+        if (transactionId == null) {
             return -1;
         }
 
@@ -359,6 +358,37 @@ public class PaymentServiceImpl implements PaymentService {
         try {
             return LocalDateTime.parse(payDate, VNPAY_PAY_DATE_FORMATTER);
         } catch (DateTimeParseException ex) {
+            return null;
+        }
+    }
+
+    private String toVnPayTxnRef(UUID transactionId) {
+        return transactionId.toString().replace("-", "");
+    }
+
+    private UUID parseVnPayTxnRef(String transactionReference) {
+        if (transactionReference == null || transactionReference.isBlank()) {
+            return null;
+        }
+
+        try {
+            return UUID.fromString(transactionReference);
+        } catch (IllegalArgumentException ignored) {
+            // Continue with compact UUID parsing for VNPay-friendly references.
+        }
+
+        if (transactionReference.length() != COMPACT_UUID_LENGTH || !transactionReference.matches("[0-9a-fA-F]+")) {
+            return null;
+        }
+
+        String normalized = transactionReference.substring(0, 8)
+                + "-" + transactionReference.substring(8, 12)
+                + "-" + transactionReference.substring(12, 16)
+                + "-" + transactionReference.substring(16, 20)
+                + "-" + transactionReference.substring(20);
+        try {
+            return UUID.fromString(normalized);
+        } catch (IllegalArgumentException ex) {
             return null;
         }
     }

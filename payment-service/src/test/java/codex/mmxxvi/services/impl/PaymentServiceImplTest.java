@@ -114,7 +114,7 @@ class PaymentServiceImplTest {
         assertThat(response.getPaymentUrl())
                 .startsWith("https://sandbox.vnpayment.vn/paymentv2/vpcpay.html?")
                 .contains("vnp_TmnCode=TESTMERCHANT")
-                .contains("vnp_TxnRef=" + TRANSACTION_ID)
+                .contains("vnp_TxnRef=" + TRANSACTION_ID.toString().replace("-", ""))
                 .contains("vnp_SecureHash=");
     }
 
@@ -194,7 +194,7 @@ class PaymentServiceImplTest {
         when(paymentRepository.save(any(Payment.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         Map<String, String> fields = new LinkedHashMap<>();
-        fields.put("vnp_TxnRef", TRANSACTION_ID.toString());
+        fields.put("vnp_TxnRef", TRANSACTION_ID.toString().replace("-", ""));
         fields.put("vnp_ResponseCode", "00");
         fields.put("vnp_PayDate", "20260515120000");
         String secureHash = vnPayConfig.hashAllFields(fields);

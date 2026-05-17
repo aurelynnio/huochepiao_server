@@ -21,6 +21,6 @@ app:
 vnpay:
   pay-url: ${VNPAY_PAY_URL:https://sandbox.vnpayment.vn/paymentv2/vpcpay.html}
   return-url: ${VNPAY_RETURN_URL:/api/payments/vnpay/callback}
-  tmn-code: ${VNPAY_TMN_CODE:}
-  hash-secret: ${VNPAY_HASH_SECRET:}
+  tmn-code: ${VNPAY_TMN_CODE:BWMQTCMD}
+  hash-secret: ${VNPAY_HASH_SECRET:HUKRU8XT2ASB7K0RBHGN34BI0M9FITRJ}
   api-url: ${VNPAY_API_URL:https://sandbox.vnpayment.vn/merchant_webapi/api/transaction}
