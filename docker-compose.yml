@@ -61,8 +61,12 @@ services:
     ports:
       - "8080:8080"
     depends_on:
-      - config-server
-      - discovery-service
+      config-server:
+        condition: service_started
+      discovery-service:
+        condition: service_started
+      user-service:
+        condition: service_started
     networks:
       - microservice-network
 
@@ -86,9 +90,12 @@ services:
       ORDER_DB_USERNAME: root
       ORDER_DB_PASSWORD: 123456
     depends_on:
-      - config-server
-      - discovery-service
-      - sql-service
+      config-server:
+        condition: service_started
+      discovery-service:
+        condition: service_started
+      sql-service:
+        condition: service_healthy
     networks:
       - microservice-network
 
@@ -112,9 +119,12 @@ services:
       PAYMENT_DB_USERNAME: root
       PAYMENT_DB_PASSWORD: 123456
     depends_on:
-      - config-server
-      - discovery-service
-      - sql-service
+      config-server:
+        condition: service_started
+      discovery-service:
+        condition: service_started
+      sql-service:
+        condition: service_healthy
     networks:
       - microservice-network
 
@@ -139,9 +149,12 @@ services:
       USER_DB_USERNAME: root
       USER_DB_PASSWORD: 123456
     depends_on:
-      - config-server
-      - discovery-service
-      - sql-service
+      config-server:
+        condition: service_started
+      discovery-service:
+        condition: service_started
+      sql-service:
+        condition: service_healthy
     networks:
       - microservice-network
 
@@ -242,6 +255,12 @@ services:
       MYSQL_ROOT_HOST: "%"
     ports:
       - "3306:3306"
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$${MYSQL_ROOT_PASSWORD} --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
     volumes:
       - mysql_data_v2:/var/lib/mysql
     networks:
