@@ -119,6 +119,36 @@ public class UserServiceImpl implements UserService {
     }
 
     @Override
+    public Mono<JwtResponse> refreshAccessToken(String refreshToken) {
+        return Mono.fromCallable(() -> {
+                    try {
+                        if (!StringUtils.hasText(refreshToken) || !jwtService.isRefreshToken(refreshToken)) {
+                            throw new AppExceptions.UnauthorizedException("Invalid refresh token");
+                        }
+
+                        String userId = jwtService.extractUsername(refreshToken);
+                        if (!jwtService.isValidToken(refreshToken, userId)) {
+                            throw new AppExceptions.UnauthorizedException("Invalid refresh token");
+                        }
+
+                        User user = userRepository.findById(parseUserId(userId))
+                                .orElseThrow(() -> new AppExceptions.UnauthorizedException("Invalid refresh token"));
+
+                        return JwtResponse.builder()
+                                .accessToken(jwtService.generateAccessToken(user))
+                                .refreshToken(jwtService.generateRefreshToken(user))
+                                .user(convertDTO(user))
+                                .build();
+                    } catch (AppExceptions.UnauthorizedException ex) {
+                        throw ex;
+                    } catch (Exception ex) {
+                        throw new AppExceptions.UnauthorizedException("Invalid refresh token", ex);
+                    }
+                })
+                .subscribeOn(Schedulers.boundedElastic());
+    }
+
+    @Override
     public Mono<Void> delete(String id) {
         UUID targetUserId = parseUserId(id);
 

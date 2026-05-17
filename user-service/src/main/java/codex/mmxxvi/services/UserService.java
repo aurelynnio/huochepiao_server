@@ -14,6 +14,7 @@ public interface UserService {
     Mono<PageResponse<UserResponse>> getAllUsers(PageRequestDto pageRequestDto);
     Mono<UserResponse> registerUser(CreateUserRequest user);
     Mono<JwtResponse> login(LoginRequest request);
+    Mono<JwtResponse> refreshAccessToken(String refreshToken);
     Mono<Void> delete(String id);
     Mono<UserResponse> update(String id, UpdateUserRequest request);
 

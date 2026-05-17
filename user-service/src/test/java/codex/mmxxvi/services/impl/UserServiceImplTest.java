@@ -140,6 +140,33 @@ class UserServiceImplTest {
     }
 
     @Test
+    void refreshAccessTokenReturnsRotatedTokensForValidRefreshToken() {
+        User user = user("alice", "alice@example.com", "encoded-password", 0);
+
+        when(jwtService.isRefreshToken("refresh-token")).thenReturn(true);
+        when(jwtService.extractUsername("refresh-token")).thenReturn(USER_ID.toString());
+        when(jwtService.isValidToken("refresh-token", USER_ID.toString())).thenReturn(true);
+        when(userRepository.findById(USER_ID)).thenReturn(Optional.of(user));
+        when(jwtService.generateAccessToken(user)).thenReturn("new-access-token");
+        when(jwtService.generateRefreshToken(user)).thenReturn("new-refresh-token");
+
+        JwtResponse response = userService.refreshAccessToken("refresh-token").block();
+
+        assertThat(response).isNotNull();
+        assertThat(response.getAccessToken()).isEqualTo("new-access-token");
+        assertThat(response.getRefreshToken()).isEqualTo("new-refresh-token");
+        assertThat(response.getUser().getId()).isEqualTo(USER_ID);
+    }
+
+    @Test
+    void refreshAccessTokenRejectsInvalidRefreshToken() {
+        when(jwtService.isRefreshToken("bad-token")).thenReturn(false);
+
+        assertThatThrownBy(() -> userService.refreshAccessToken("bad-token").block())
+                .isInstanceOf(AppExceptions.UnauthorizedException.class);
+    }
+
+    @Test
     void getAllUsersRequiresAdminAndReturnsPage() {
         User user = user("alice", "alice@example.com", "encoded-password", 0);
         when(userRepository.findAll(any(Pageable.class)))

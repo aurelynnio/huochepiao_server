@@ -13,6 +13,7 @@ import jakarta.validation.Valid;
 import java.time.Duration;
 
 import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpCookie;
 import org.springframework.http.ResponseCookie;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.server.ServerWebExchange;
@@ -47,6 +48,32 @@ public class UserController {
     @PostMapping("/login")
     public Mono<ResponseEntity<UserResponse>> login(@Valid @RequestBody LoginRequest req, ServerWebExchange exchange) {
         return userService.login(req)
+                .map(session -> {
+                    addCookie(
+                            exchange,
+                            ACCESS_TOKEN_COOKIE,
+                            session.getAccessToken(),
+                            Duration.ofMillis(jwtProperties.getAccessExpiration())
+                    );
+                    addCookie(
+                            exchange,
+                            REFRESH_TOKEN_COOKIE,
+                            session.getRefreshToken(),
+                            Duration.ofMillis(jwtProperties.getRefreshExpiration())
+                    );
+
+                    return ResponseEntity.ok(session.getUser());
+                });
+    }
+
+    @PostMapping("/refresh")
+    public Mono<ResponseEntity<UserResponse>> refresh(ServerWebExchange exchange) {
+        String refreshToken = getCookieValue(exchange, REFRESH_TOKEN_COOKIE);
+        if (refreshToken == null || refreshToken.isBlank()) {
+            return Mono.error(new codex.mmxxvi.exception.AppExceptions.UnauthorizedException("Refresh token is required"));
+        }
+
+        return userService.refreshAccessToken(refreshToken)
                 .map(session -> {
                     addCookie(
                             exchange,
@@ -112,6 +139,11 @@ public class UserController {
         }
 
         return "https".equalsIgnoreCase(exchange.getRequest().getURI().getScheme());
+    }
+
+    private String getCookieValue(ServerWebExchange exchange, String name) {
+        HttpCookie cookie = exchange.getRequest().getCookies().getFirst(name);
+        return cookie == null ? null : cookie.getValue();
     }
 
 }

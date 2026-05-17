@@ -23,7 +23,7 @@ public class SecurityConfig {
                 .cors(cors -> cors.configurationSource(corsConfigurationSource))
                 .authorizeExchange(exchange -> exchange
                         .pathMatchers(HttpMethod.OPTIONS, "/**").permitAll()
-                        .pathMatchers(HttpMethod.POST, "/api/users/register", "/api/users/login", "/api/users/logout").permitAll()
+                        .pathMatchers(HttpMethod.POST, "/api/users/register", "/api/users/login", "/api/users/logout", "/api/users/refresh").permitAll()
                         .pathMatchers(
                                 HttpMethod.GET,
                                 "/api/payments/vnpay/callback",

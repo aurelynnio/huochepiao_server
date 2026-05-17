@@ -39,7 +39,7 @@ spring:
             - id: user-auth-service
               uri: http://user-service:8081
               predicates:
-                - Path=/api/users/login,/api/users/register,/api/users/logout
+                - Path=/api/users/login,/api/users/register,/api/users/logout,/api/users/refresh
               filters:
                 - StripPrefix=2
                 - PrefixPath=/v1
