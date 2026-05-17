@@ -3,6 +3,7 @@ package codex.mmxxvi.controller;
 
 import java.util.UUID;
 
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -12,6 +13,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import codex.mmxxvi.dto.request.CreateTicketRequest;
 import codex.mmxxvi.dto.request.PageRequestDto;
 import codex.mmxxvi.dto.request.UpdateTicketItemsRequest;
 import codex.mmxxvi.dto.request.UpdateTicketRequest;
@@ -38,6 +40,10 @@ public class TicketController {
     @GetMapping("/tickets/{id}")
     public Mono<ResponseTicket> getTicket(@PathVariable UUID id) {
         return ticketService.getTicket(id);
+    }
+    @PostMapping("/tickets")
+    public Mono<ResponseTicket> createTicket(@Valid @RequestBody CreateTicketRequest createTicketRequest) {
+        return ticketService.createTicket(createTicketRequest);
     }
     @PatchMapping("/tickets/{id}")
     public Mono<ResponseTicket> updateTicket(@PathVariable UUID id, @Valid @RequestBody UpdateTicketRequest updateTicketRequest) {

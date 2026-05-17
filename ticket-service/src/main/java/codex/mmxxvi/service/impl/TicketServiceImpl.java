@@ -21,6 +21,7 @@ import org.springframework.util.StringUtils;
 import codex.mmxxvi.client.search.TicketSearchIndexClient;
 import codex.mmxxvi.client.search.dto.IndexTicketItemRequest;
 import codex.mmxxvi.client.search.dto.IndexTicketRequest;
+import codex.mmxxvi.dto.request.CreateTicketRequest;
 import codex.mmxxvi.dto.request.PageRequestDto;
 import codex.mmxxvi.dto.request.UpdateTicketItemRequest;
 import codex.mmxxvi.dto.request.UpdateTicketItemsRequest;
@@ -63,6 +64,7 @@ public class TicketServiceImpl implements TicketService {
                 .title(ticket.getTitle())
                 .dateStart(ticket.getDateStart())
                 .dateEnd(ticket.getDateEnd())
+                .status(ticket.getStatus())
                 .ticketItems(ticket.getTicketItems())
                 .build();
     }
@@ -118,15 +120,24 @@ public class TicketServiceImpl implements TicketService {
     }
 
     @Override
-    public Mono<ResponseTicket> createTicket() {
+    public Mono<ResponseTicket> createTicket(CreateTicketRequest createTicketRequest) {
         return resolveAuthContext().flatMap(authContext ->
                 Mono.fromCallable(() -> {
                             requireAnyScope(authContext, "ticket.write");
                             requireAdmin(authContext);
 
-                            Ticket ticket = new Ticket();
-                            ticket.setId(UUID.randomUUID());
-                            return toResponse(ticket);
+                            Ticket ticket = Ticket.builder()
+                                    .title(createTicketRequest.getTitle().trim())
+                                    .dateStart(createTicketRequest.getDateStart())
+                                    .dateEnd(createTicketRequest.getDateEnd())
+                                    .status(0)
+                                    .build();
+                            ticket.setTicketItems(toTicketItems(ticket.getId(), createTicketRequest.getTicketItems()));
+
+                            Ticket createdTicket = ticketRepository.save(ticket);
+                            invalidateTicketCaches(createdTicket.getId());
+                            syncTicketToSearch(createdTicket, authContext);
+                            return toResponse(createdTicket);
                         })
                         .subscribeOn(Schedulers.boundedElastic())
         );
@@ -291,7 +302,6 @@ public class TicketServiceImpl implements TicketService {
 
             String name = requestItem.getName() == null ? null : requestItem.getName().trim();
             String description = requestItem.getDescription() == null ? null : requestItem.getDescription().trim();
-
             ticketItems.add(TicketItem.builder()
                     .id(requestItem.getId() != null ? requestItem.getId() : UUID.randomUUID())
                     .ticketId(ticketId)

@@ -51,6 +51,8 @@ public class SecurityConfig {
                         .hasAnyAuthority("SCOPE_payment.write", "SCOPE_payment.write.self", "SCOPE_payment.refund", "SCOPE_payment.refund.self")
                         .pathMatchers(HttpMethod.GET, "/api/tickets", "/api/tickets/**", "/api/ticket", "/api/ticket/**")
                         .hasAnyAuthority("SCOPE_ticket.read", "SCOPE_ticket.write")
+                        .pathMatchers(HttpMethod.POST, "/api/tickets", "/api/tickets/**", "/api/ticket", "/api/ticket/**")
+                        .hasAuthority("SCOPE_ticket.write")
                         .pathMatchers(HttpMethod.PATCH, "/api/tickets/**", "/api/ticket/**")
                         .hasAuthority("SCOPE_ticket.write")
                         .pathMatchers(HttpMethod.PUT, "/api/tickets/**", "/api/ticket/**")

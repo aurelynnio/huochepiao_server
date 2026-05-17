@@ -21,6 +21,8 @@ public class SecurityConfig {
                 .authorizeExchange(exchange -> exchange
                     .pathMatchers(HttpMethod.GET, "/v1/tickets", "/v1/tickets/**")
                     .hasAnyAuthority("SCOPE_ticket.read", "SCOPE_ticket.write")
+                    .pathMatchers(HttpMethod.POST, "/v1/tickets", "/v1/tickets/**")
+                    .hasAuthority("SCOPE_ticket.write")
                     .pathMatchers(HttpMethod.PATCH, "/v1/tickets/**")
                     .hasAuthority("SCOPE_ticket.write")
                     .pathMatchers(HttpMethod.PUT, "/v1/tickets/**")

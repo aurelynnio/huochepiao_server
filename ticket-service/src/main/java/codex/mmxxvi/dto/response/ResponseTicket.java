@@ -23,6 +23,7 @@ public class ResponseTicket implements Serializable {
     private String title;
     private LocalDateTime dateStart;
     private LocalDateTime dateEnd;
+    private Integer status;
     private List<TicketItem> ticketItems;
 
     public static ResponseTicketBuilder builder() {
@@ -34,6 +35,7 @@ public class ResponseTicket implements Serializable {
         private String title;
         private LocalDateTime dateStart;
         private LocalDateTime dateEnd;
+        private Integer status;
         private List<TicketItem> ticketItems;
 
         public ResponseTicketBuilder id(UUID id) {
@@ -56,6 +58,11 @@ public class ResponseTicket implements Serializable {
             return this;
         }
 
+        public ResponseTicketBuilder status(Integer status) {
+            this.status = status;
+            return this;
+        }
+
         public ResponseTicketBuilder ticketItems(List<TicketItem> ticketItems) {
             this.ticketItems = ticketItems;
             return this;
@@ -67,6 +74,7 @@ public class ResponseTicket implements Serializable {
             response.title = this.title;
             response.dateStart = this.dateStart;
             response.dateEnd = this.dateEnd;
+            response.status = this.status;
             response.ticketItems = this.ticketItems;
             return response;
         }

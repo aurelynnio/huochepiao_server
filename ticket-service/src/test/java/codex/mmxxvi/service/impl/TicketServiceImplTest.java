@@ -1,6 +1,7 @@
 package codex.mmxxvi.service.impl;
 
 import codex.mmxxvi.client.search.TicketSearchIndexClient;
+import codex.mmxxvi.dto.request.CreateTicketRequest;
 import codex.mmxxvi.dto.request.PageRequestDto;
 import codex.mmxxvi.dto.request.UpdateTicketItemRequest;
 import codex.mmxxvi.dto.request.UpdateTicketItemsRequest;
@@ -74,6 +75,7 @@ class TicketServiceImplTest {
 
         assertThat(response.getContent()).hasSize(1);
         assertThat(response.getContent().getFirst().getTitle()).isEqualTo("Concert");
+        assertThat(response.getContent().getFirst().getStatus()).isEqualTo(0);
     }
 
     @Test
@@ -102,6 +104,37 @@ class TicketServiceImplTest {
 
         assertThat(response).isEqualTo(cachedTicket);
         verify(ticketRepository, never()).findTicketById(TICKET_ID);
+    }
+
+    @Test
+    void createTicketPersistsTicketAndSyncsSearchIndex() {
+        CreateTicketRequest request = CreateTicketRequest.builder()
+                .title("  Sai Gon - Nha Trang  ")
+                .dateStart(LocalDateTime.of(2026, 5, 20, 22, 0))
+                .dateEnd(LocalDateTime.of(2026, 5, 21, 6, 30))
+                .ticketItems(List.of(UpdateTicketItemRequest.builder()
+                        .name("  Soft Seat  ")
+                        .description("  Coach C  ")
+                        .stockInitial(40)
+                        .stockAvailable(40)
+                        .stockPrepared(true)
+                        .priceOriginal(450_000L)
+                        .priceFlash(390_000L)
+                        .build()))
+                .build();
+
+        when(ticketRepository.save(any(Ticket.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        ResponseTicket response = withAuth(ticketService.createTicket(request), USER_ID, 1, "ticket.write");
+
+        assertThat(response.getTitle()).isEqualTo("Sai Gon - Nha Trang");
+        assertThat(response.getStatus()).isEqualTo(0);
+        assertThat(response.getTicketItems()).hasSize(1);
+        assertThat(response.getTicketItems().getFirst().getTicketId()).isEqualTo(response.getId());
+        assertThat(response.getTicketItems().getFirst().getName()).isEqualTo("Soft Seat");
+        verify(ticketSearchIndexClient).indexTicket(eq("Bearer ticket-token"), any());
+        verify(cachingService).delete("ticket-service:tickets:" + response.getId());
+        verify(cachingService).deleteByPattern("ticket-service:tickets:pages:*");
     }
 
     @Test
