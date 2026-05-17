@@ -29,8 +29,8 @@ import lombok.Setter;
 public class VNPayConfig {
     private String payUrl = "https://sandbox.vnpayment.vn/paymentv2/vpcpay.html";
     private String returnUrl = "/v1/payments/vnpay/callback";
-    private String tmnCode = "BWMQTCMD";
-    private String hashSecret = "HUKRU8XT2ASB7K0RBHGN34BI0M9FITRJ";
+    private String tmnCode = "ASZ3R2I3";
+    private String hashSecret = "69GLTLV9HI0UI11OT6HK7OVV3LKN6CCS";
     private String apiUrl = "https://sandbox.vnpayment.vn/merchant_webapi/api/transaction";
 
 
