@@ -132,6 +132,40 @@ class OrderServiceImplTest {
     }
 
     @Test
+    void cancelOrderAllowsOwnerToCancelPendingOrder() {
+        Order order = order(USER_ID, 0);
+        when(orderRepository.findById(ORDER_ID)).thenReturn(Optional.of(order));
+        when(orderRepository.save(any(Order.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        OrderResponse response = withAuth(
+                orderService.cancelOrder(ORDER_ID),
+                USER_ID,
+                0,
+                "order.write.self"
+        );
+
+        assertThat(response.getStatus()).isEqualTo(4);
+    }
+
+    @Test
+    void cancelOrderRejectsNonOwnerWithoutAdminRole() {
+        Order order = order(USER_ID, 0);
+        when(orderRepository.findById(ORDER_ID)).thenReturn(Optional.of(order));
+
+        assertThatThrownBy(() -> withAuth(orderService.cancelOrder(ORDER_ID), OTHER_USER_ID, 0, "order.write.self"))
+                .isInstanceOf(AppExceptions.ForbiddenException.class);
+    }
+
+    @Test
+    void cancelOrderRejectsNonPendingOrder() {
+        Order order = order(USER_ID, 1);
+        when(orderRepository.findById(ORDER_ID)).thenReturn(Optional.of(order));
+
+        assertThatThrownBy(() -> withAuth(orderService.cancelOrder(ORDER_ID), USER_ID, 0, "order.write.self"))
+                .isInstanceOf(AppExceptions.ConflictException.class);
+    }
+
+    @Test
     void filterOrdersByStatusUsesUserAndStatusForSelfScope() {
         when(orderRepository.findByUserIdAndStatus(eq(USER_ID), eq(0), any(Pageable.class)))
                 .thenReturn(new PageImpl<>(List.of(order(USER_ID, 0))));

@@ -53,4 +53,9 @@ public class OrderController {
     public Mono<OrderResponse> updateStatus(@PathVariable UUID id, @Valid @RequestBody UpdateOrderRequest request) {
         return orderService.updateStatus(id, request.getStatus());
     }
+
+    @PatchMapping("/orders/{id}/cancel")
+    public Mono<OrderResponse> cancelOrder(@PathVariable UUID id) {
+        return orderService.cancelOrder(id);
+    }
 }

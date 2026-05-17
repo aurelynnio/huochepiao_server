@@ -43,6 +43,8 @@ public class SecurityConfig {
                         .hasAnyAuthority("SCOPE_order.read", "SCOPE_order.read.self", "SCOPE_order.admin")
                         .pathMatchers(HttpMethod.POST, "/api/orders", "/api/orders/**", "/api/order", "/api/order/**")
                         .hasAnyAuthority("SCOPE_order.write", "SCOPE_order.write.self", "SCOPE_order.admin")
+                        .pathMatchers(HttpMethod.PATCH, "/api/orders/*/cancel", "/api/order/*/cancel")
+                        .hasAnyAuthority("SCOPE_order.write", "SCOPE_order.write.self", "SCOPE_order.admin")
                         .pathMatchers(HttpMethod.PATCH, "/api/orders/**", "/api/order/**")
                         .hasAuthority("SCOPE_order.admin")
                         .pathMatchers(HttpMethod.GET, "/api/payments", "/api/payments/**", "/api/payment", "/api/payment/**")

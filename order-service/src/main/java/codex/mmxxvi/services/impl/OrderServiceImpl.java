@@ -29,6 +29,9 @@ import java.util.stream.Collectors;
 @Service
 public class OrderServiceImpl implements OrderService {
     private static final int ROLE_ADMIN = 1;
+    private static final int STATUS_PENDING = 0;
+    private static final int STATUS_COMPLETED = 1;
+    private static final int STATUS_CANCELLED = 4;
 
 
     private final OrderRepository orderRepository;
@@ -100,7 +103,7 @@ public class OrderServiceImpl implements OrderService {
                                     .quantity(request.getQuantity())
                                     .unitPrice(request.getUnitPrice())
                                     .totalPrice(request.getTotalPrice())
-                                    .status(request.getStatus() == null ? 0 : request.getStatus())
+                                    .status(request.getStatus() == null ? STATUS_PENDING : request.getStatus())
                                     .build();
                             return convertDTO(orderRepository.save(order));
                         })
@@ -117,7 +120,31 @@ public class OrderServiceImpl implements OrderService {
 
                             Order order = orderRepository.findById(id)
                                     .orElseThrow(() -> new AppExceptions.ResourceNotFoundException("Order not found"));
-                            order.setStatus(Boolean.TRUE.equals(status) ? 1 : 0);
+                            order.setStatus(Boolean.TRUE.equals(status) ? STATUS_COMPLETED : STATUS_PENDING);
+                            return convertDTO(orderRepository.save(order));
+                        })
+                        .subscribeOn(Schedulers.boundedElastic())
+        );
+    }
+
+    @Override
+    public Mono<OrderResponse> cancelOrder(UUID id) {
+        return resolveAuthContext().flatMap(authContext ->
+                Mono.fromCallable(() -> {
+                            requireAnyScope(authContext, "order.write", "order.write.self", "order.admin");
+
+                            Order order = orderRepository.findById(id)
+                                    .orElseThrow(() -> new AppExceptions.ResourceNotFoundException("Order not found"));
+
+                            if (!authContext.isAdmin() && !authContext.userId().equals(order.getUserId())) {
+                                throw new AppExceptions.ForbiddenException("You cannot cancel another user's order");
+                            }
+
+                            if (!Integer.valueOf(STATUS_PENDING).equals(order.getStatus())) {
+                                throw new AppExceptions.ConflictException("Only pending orders can be cancelled");
+                            }
+
+                            order.setStatus(STATUS_CANCELLED);
                             return convertDTO(orderRepository.save(order));
                         })
                         .subscribeOn(Schedulers.boundedElastic())

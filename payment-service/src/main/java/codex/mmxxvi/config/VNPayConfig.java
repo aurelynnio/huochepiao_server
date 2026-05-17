@@ -28,7 +28,7 @@ import lombok.Setter;
 @ConfigurationProperties(prefix = "vnpay")
 public class VNPayConfig {
     private String payUrl = "https://sandbox.vnpayment.vn/paymentv2/vpcpay.html";
-    private String returnUrl = "http://api.vetautet.app/api/payments/vnpay/callback";
+    private String returnUrl = "https://vetautet.app/api/payments/vnpay/callback";
     private String tmnCode = "ASZ3R2I3";
     private String hashSecret = "69GLTLV9HI0UI11OT6HK7OVV3LKN6CCS";
     private String apiUrl = "https://sandbox.vnpayment.vn/merchant_webapi/api/transaction";

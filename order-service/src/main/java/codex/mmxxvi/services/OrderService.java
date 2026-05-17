@@ -13,5 +13,6 @@ public interface OrderService {
     Mono<PageResponse<OrderResponse>> getAllOrders(PageRequestDto pageRequestDto);
     Mono<OrderResponse> createOrder(CreateOrderRequest request);
     Mono<OrderResponse> updateStatus(UUID id, Boolean status);
+    Mono<OrderResponse> cancelOrder(UUID id);
     Mono<PageResponse<OrderResponse>> filterOrderFollowingStatus(Integer status, PageRequestDto pageRequestDto);
 }

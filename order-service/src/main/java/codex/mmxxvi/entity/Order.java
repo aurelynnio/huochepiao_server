@@ -52,7 +52,7 @@ public class Order {
 
     @Builder.Default
     @Column(nullable = false)
-    private Integer status = 0; // 0: pending, 1: completed, 2: failed, 3: refunded
+    private Integer status = 0; // 0: pending, 1: completed, 2: failed, 3: refunded, 4: cancelled
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
