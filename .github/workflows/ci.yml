@@ -222,16 +222,13 @@ jobs:
               echo "API gateway logs are not available yet."
             fi
 
-            case "$SEED_TICKET_DATA" in
-              true)
-                echo "Seeding production ticket data..."
-                chmod +x seed/seed-production.sh
-                SKIP_DOCKER_START=true ./seed/seed-production.sh
-                ;;
-              *)
-                echo "Skipping ticket seed. Run workflow_dispatch with seed_ticket_data=true when initial production data is needed."
-                ;;
-            esac
+            if [ "${SEED_TICKET_DATA:-false}" = "true" ]; then
+              echo "Seeding production ticket data..."
+              chmod +x seed/seed-production.sh
+              SKIP_DOCKER_START=true ./seed/seed-production.sh
+            else
+              echo "Skipping ticket seed. Run workflow_dispatch with seed_ticket_data=true when initial production data is needed."
+            fi
 
             echo "Cleaning old images..."
             docker image prune -af || true
