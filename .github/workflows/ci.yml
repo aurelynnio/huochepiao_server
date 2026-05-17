@@ -218,7 +218,11 @@ jobs:
             sleep 10
 
             echo "Recent API gateway logs:"
-            if ! docker compose -f docker-compose.yml -f docker-compose.ecr.yml logs --tail 80 api-gateway 2>&1; then
+            set +e
+            docker compose -f docker-compose.yml -f docker-compose.ecr.yml logs --tail 80 api-gateway 2>&1
+            API_GATEWAY_LOGS_EXIT=$?
+            set -e
+            if [ "$API_GATEWAY_LOGS_EXIT" -ne 0 ]; then
               echo "API gateway logs are not available yet."
             fi
 
