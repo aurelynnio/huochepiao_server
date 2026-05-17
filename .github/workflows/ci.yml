@@ -214,8 +214,11 @@ jobs:
             echo "Service container status:"
             docker compose -f docker-compose.yml -f docker-compose.ecr.yml ps
 
+            echo "Waiting briefly for API gateway logs..."
+            sleep 10
+
             echo "Recent API gateway logs:"
-            docker logs api-gateway --tail=80 || true
+            docker logs --tail 80 api-gateway 2>&1 || echo "API gateway logs are not available yet."
 
             if [ "$SEED_TICKET_DATA" = "true" ]; then
               echo "Seeding production ticket data..."
