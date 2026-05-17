@@ -218,15 +218,20 @@ jobs:
             sleep 10
 
             echo "Recent API gateway logs:"
-            docker logs --tail 80 api-gateway 2>&1 || echo "API gateway logs are not available yet."
-
-            if [ "$SEED_TICKET_DATA" = "true" ]; then
-              echo "Seeding production ticket data..."
-              chmod +x seed/seed-production.sh
-              SKIP_DOCKER_START=true ./seed/seed-production.sh
-            else
-              echo "Skipping ticket seed. Run workflow_dispatch with seed_ticket_data=true when initial production data is needed."
+            if ! docker compose -f docker-compose.yml -f docker-compose.ecr.yml logs --tail 80 api-gateway 2>&1; then
+              echo "API gateway logs are not available yet."
             fi
+
+            case "$SEED_TICKET_DATA" in
+              true)
+                echo "Seeding production ticket data..."
+                chmod +x seed/seed-production.sh
+                SKIP_DOCKER_START=true ./seed/seed-production.sh
+                ;;
+              *)
+                echo "Skipping ticket seed. Run workflow_dispatch with seed_ticket_data=true when initial production data is needed."
+                ;;
+            esac
 
             echo "Cleaning old images..."
             docker image prune -af || true
