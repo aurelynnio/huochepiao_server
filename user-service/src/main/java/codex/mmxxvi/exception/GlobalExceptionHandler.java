@@ -19,6 +19,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.HandlerMethodValidationException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.bind.support.WebExchangeBindException;
 import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.server.ServerWebExchange;
 import org.springframework.validation.method.ParameterValidationResult;
@@ -42,6 +43,14 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(BindException.class)
     public ResponseEntity<ErrorResponse> handleBindException(
             BindException ex,
+            ServerWebExchange exchange
+    ) {
+        return buildValidationErrorResponse(ex.getBindingResult(), exchange);
+    }
+
+    @ExceptionHandler(WebExchangeBindException.class)
+    public ResponseEntity<ErrorResponse> handleWebExchangeBindException(
+            WebExchangeBindException ex,
             ServerWebExchange exchange
     ) {
         return buildValidationErrorResponse(ex.getBindingResult(), exchange);
