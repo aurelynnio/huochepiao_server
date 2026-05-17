@@ -1,8 +1,6 @@
 services:
   config-server:
     image: "${ECR_REGISTRY}/${ECR_REPOSITORY}:config-server-${IMAGE_TAG}"
-  discovery-service:
-    image: "${ECR_REGISTRY}/${ECR_REPOSITORY}:discovery-service-${IMAGE_TAG}"
   api-gateway:
     image: "${ECR_REGISTRY}/${ECR_REPOSITORY}:api-gateway-${IMAGE_TAG}"
   order-service:

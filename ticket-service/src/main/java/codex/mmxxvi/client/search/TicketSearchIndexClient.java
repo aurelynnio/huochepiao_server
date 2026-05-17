@@ -12,7 +12,11 @@ import org.springframework.web.bind.annotation.RequestHeader;
 
 import codex.mmxxvi.client.search.dto.IndexTicketRequest;
 
-@FeignClient(name = "search-service", path = "/internal/search/tickets")
+@FeignClient(
+        name = "search-service",
+        url = "${SEARCH_SERVICE_URL:http://search-service:8085}",
+        path = "/internal/search/tickets"
+)
 public interface TicketSearchIndexClient {
 
     @PostMapping

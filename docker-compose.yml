@@ -21,27 +21,6 @@ services:
     networks:
       - microservice-network
 
-  discovery-service:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      args:
-        MODULE: discovery-service
-    container_name: discovery-service
-    restart: unless-stopped
-    environment:
-      APP_ENV: dev
-      CONFIG_SERVER_URL: http://config-server:8888
-      CONFIG_SERVER_GIT_LABEL: main
-      CONFIG_SERVER_USERNAME: config-client
-      CONFIG_SERVER_PASSWORD: changeit
-    ports:
-      - "8761:8761"
-    depends_on:
-      - config-server
-    networks:
-      - microservice-network
-
   api-gateway:
     build:
       context: .
@@ -56,14 +35,11 @@ services:
       CONFIG_SERVER_GIT_LABEL: main
       CONFIG_SERVER_USERNAME: config-client
       CONFIG_SERVER_PASSWORD: changeit
-      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://discovery-service:8761/eureka/
       AUTH_ISSUER_URI: http://user-service:8081
     ports:
       - "8080:8080"
     depends_on:
       config-server:
-        condition: service_started
-      discovery-service:
         condition: service_started
       user-service:
         condition: service_started
@@ -84,15 +60,12 @@ services:
       CONFIG_SERVER_GIT_LABEL: main
       CONFIG_SERVER_USERNAME: config-client
       CONFIG_SERVER_PASSWORD: changeit
-      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://discovery-service:8761/eureka/
       AUTH_ISSUER_URI: http://user-service:8081
       ORDER_DB_URL: jdbc:mysql://sql-service:3306/order_service?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
       ORDER_DB_USERNAME: root
       ORDER_DB_PASSWORD: 123456
     depends_on:
       config-server:
-        condition: service_started
-      discovery-service:
         condition: service_started
       sql-service:
         condition: service_healthy
@@ -113,15 +86,12 @@ services:
       CONFIG_SERVER_GIT_LABEL: main
       CONFIG_SERVER_USERNAME: config-client
       CONFIG_SERVER_PASSWORD: changeit
-      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://discovery-service:8761/eureka/
       AUTH_ISSUER_URI: http://user-service:8081
       PAYMENT_DB_URL: jdbc:mysql://sql-service:3306/payment_service?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
       PAYMENT_DB_USERNAME: root
       PAYMENT_DB_PASSWORD: 123456
     depends_on:
       config-server:
-        condition: service_started
-      discovery-service:
         condition: service_started
       sql-service:
         condition: service_healthy
@@ -142,7 +112,6 @@ services:
       CONFIG_SERVER_GIT_LABEL: main
       CONFIG_SERVER_USERNAME: config-client
       CONFIG_SERVER_PASSWORD: changeit
-      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://discovery-service:8761/eureka/
       AUTH_ISSUER_URI: http://user-service:8081
       JWT_ISSUER: http://user-service:8081
       USER_DB_URL: jdbc:mysql://sql-service:3306/user_service?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
@@ -150,8 +119,6 @@ services:
       USER_DB_PASSWORD: 123456
     depends_on:
       config-server:
-        condition: service_started
-      discovery-service:
         condition: service_started
       sql-service:
         condition: service_healthy
@@ -172,7 +139,6 @@ services:
       CONFIG_SERVER_GIT_LABEL: main
       CONFIG_SERVER_USERNAME: config-client
       CONFIG_SERVER_PASSWORD: changeit
-      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://discovery-service:8761/eureka/
       AUTH_ISSUER_URI: http://user-service:8081
       SEARCH_SERVICE_URL: http://search-service:8085
       TICKET_MONGODB_URI: mongodb://admin:123456@mongodb-service:27017/ticket-service?authSource=admin
@@ -182,7 +148,6 @@ services:
       SPRING_DATA_REDIS_PASSWORD: 123456
     depends_on:
       - config-server
-      - discovery-service
       - mongodb-service
       - redis-service
     networks:
@@ -202,14 +167,12 @@ services:
       CONFIG_SERVER_GIT_LABEL: main
       CONFIG_SERVER_USERNAME: config-client
       CONFIG_SERVER_PASSWORD: changeit
-      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://discovery-service:8761/eureka/
       AUTH_ISSUER_URI: http://user-service:8081
       ELASTICSEARCH_URL: http://elasticsearch-service:9200
     ports:
       - "8087:8085"
     depends_on:
       - config-server
-      - discovery-service
       - elasticsearch-service
     networks:
       - microservice-network
