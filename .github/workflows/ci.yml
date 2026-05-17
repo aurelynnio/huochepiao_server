@@ -6,6 +6,12 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      seed_ticket_data:
+        description: "Seed ticket data after deploying to EC2"
+        required: false
+        default: false
+        type: boolean
 
 concurrency:
   group: backend-vetau-${{ github.ref }}
@@ -69,7 +75,7 @@ jobs:
     name: Push ECR and Deploy EC2
     runs-on: ubuntu-latest
     needs: docker-check
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
 
     steps:
       - name: Checkout source
@@ -137,6 +143,7 @@ jobs:
             ECR_REGISTRY="${{ steps.login-ecr.outputs.registry }}"
             ECR_REPOSITORY="${{ vars.ECR_REPOSITORY }}"
             IMAGE_TAG="${{ steps.image.outputs.IMAGE_TAG }}"
+            SEED_TICKET_DATA="${{ github.event_name == 'workflow_dispatch' && inputs.seed_ticket_data == true }}"
             REMOTE_APP_DIR="/srv/huochepiao"
             REMOTE_BASE_DIR="$(dirname "$REMOTE_APP_DIR")"
             REPOSITORY_URL="https://github.com/${{ github.repository }}.git"
@@ -209,6 +216,14 @@ jobs:
 
             echo "Recent API gateway logs:"
             docker logs api-gateway --tail=80 || true
+
+            if [ "$SEED_TICKET_DATA" = "true" ]; then
+              echo "Seeding production ticket data..."
+              chmod +x seed/seed-production.sh
+              SKIP_DOCKER_START=true ./seed/seed-production.sh
+            else
+              echo "Skipping ticket seed. Run workflow_dispatch with seed_ticket_data=true when initial production data is needed."
+            fi
 
             echo "Cleaning old images..."
             docker image prune -af || true
