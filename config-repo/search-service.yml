@@ -1,6 +1,13 @@
 spring:
   application:
     name: search-service
+  data:
+    mongodb:
+      auto-index-creation: true
+  mongodb:
+    representation:
+      uuid: standard
+    uri: ${SEARCH_MONGODB_URI:mongodb://localhost:27017/search-service}
 
 server:
   port: ${SERVER_PORT:8085}
@@ -10,6 +17,5 @@ app:
     api-key: ${APP_INTERNAL_API_KEY:vetau-internal-key}
 
 search:
-  elasticsearch:
-    url: ${ELASTICSEARCH_URL:http://localhost:9200}
-    ticket-index: ${SEARCH_TICKET_INDEX:ticket-search}
+  mongodb:
+    ticket-collection: ${SEARCH_TICKET_COLLECTION:ticket-search}

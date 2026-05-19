@@ -11,6 +11,13 @@ spring:
       password: ${CONFIG_SERVER_PASSWORD:changeit}
   profiles:
     active: ${APP_ENV:dev}
+  data:
+    mongodb:
+      auto-index-creation: true
+  mongodb:
+    representation:
+      uuid: standard
+    uri: ${SEARCH_MONGODB_URI:mongodb://localhost:27017/search-service}
   security:
     oauth2:
       resourceserver:

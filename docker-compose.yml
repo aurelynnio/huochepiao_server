@@ -168,12 +168,12 @@ services:
       CONFIG_SERVER_USERNAME: config-client
       CONFIG_SERVER_PASSWORD: changeit
       AUTH_ISSUER_URI: http://user-service:8081
-      ELASTICSEARCH_URL: http://elasticsearch-service:9200
+      SEARCH_MONGODB_URI: mongodb://admin:123456@mongodb-service:27017/search-service?authSource=admin
     ports:
       - "8087:8085"
     depends_on:
       - config-server
-      - elasticsearch-service
+      - mongodb-service
     networks:
       - microservice-network
 
@@ -229,26 +229,11 @@ services:
     networks:
       - microservice-network
 
-  elasticsearch-service:
-    container_name: elasticsearch-service
-    image: docker.elastic.co/elasticsearch/elasticsearch:8.13.2
-    restart: unless-stopped
-    environment:
-      discovery.type: single-node
-      xpack.security.enabled: "false"
-    ports:
-      - "9200:9200"
-    volumes:
-      - esdata:/usr/share/elasticsearch/data
-    networks:
-      - microservice-network
-
 volumes:
   redis_data:
   mongodb_data:
   mysql_data:
   mysql_data_v2:
-  esdata:
 
 networks:
   microservice-network:

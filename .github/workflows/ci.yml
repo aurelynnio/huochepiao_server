@@ -121,7 +121,29 @@ jobs:
             docker push "$IMAGE_URI"
           done
 
+      - name: Resolve deploy transport
+        id: deploy-method
+        env:
+          EC2_INSTANCE_ID: ${{ vars.EC2_INSTANCE_ID }}
+        run: |
+          set -euo pipefail
+
+          trim() {
+            printf '%s' "$1" | tr -d '\r' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//'
+          }
+
+          INSTANCE_ID="$(trim "${EC2_INSTANCE_ID:-}")"
+
+          if [ -n "$INSTANCE_ID" ]; then
+            echo "transport=ssm" >> "$GITHUB_OUTPUT"
+            echo "Using AWS SSM deploy transport for instance $INSTANCE_ID."
+          else
+            echo "transport=ssh" >> "$GITHUB_OUTPUT"
+            echo "EC2_INSTANCE_ID is not set. Falling back to SSH deploy transport."
+          fi
+
       - name: Prepare SSH connection
+        if: steps.deploy-method.outputs.transport == 'ssh'
         env:
           EC2_HOST: ${{ secrets.EC2_HOST }}
           EC2_PORT: ${{ vars.EC2_PORT }}
@@ -193,6 +215,7 @@ jobs:
           fi
 
       - name: Verify SSH connectivity
+        if: steps.deploy-method.outputs.transport == 'ssh'
         run: |
           set -euo pipefail
 
@@ -222,6 +245,7 @@ jobs:
           exit 1
 
       - name: Deploy to EC2 via SSH
+        if: steps.deploy-method.outputs.transport == 'ssh'
         env:
           AWS_REGION: ${{ vars.AWS_REGION }}
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
@@ -326,3 +350,163 @@ jobs:
           echo "Cleaning old images..."
           docker image prune -af || true
           EOF
+
+      - name: Deploy to EC2 via SSM
+        if: steps.deploy-method.outputs.transport == 'ssm'
+        env:
+          AWS_REGION: ${{ vars.AWS_REGION }}
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
+          IMAGE_TAG: ${{ steps.image.outputs.IMAGE_TAG }}
+          EC2_INSTANCE_ID: ${{ vars.EC2_INSTANCE_ID }}
+          REMOTE_APP_DIR: /srv/huochepiao
+          REPOSITORY_URL: https://github.com/${{ github.repository }}.git
+        run: |
+          set -euo pipefail
+
+          trim() {
+            printf '%s' "$1" | tr -d '\r' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//'
+          }
+
+          INSTANCE_ID="$(trim "${EC2_INSTANCE_ID:-}")"
+
+          if [ -z "$INSTANCE_ID" ]; then
+            echo "::error::GitHub variable EC2_INSTANCE_ID is empty or missing."
+            exit 1
+          fi
+
+          PING_STATUS="$(aws ssm describe-instance-information \
+            --region "$AWS_REGION" \
+            --filters "Key=InstanceIds,Values=$INSTANCE_ID" \
+            --query 'InstanceInformationList[0].PingStatus' \
+            --output text)"
+
+          if [ -z "$PING_STATUS" ] || [ "$PING_STATUS" = "None" ] || [ "$PING_STATUS" = "null" ]; then
+            echo "::error::Instance $INSTANCE_ID is not registered with AWS Systems Manager. Install/start amazon-ssm-agent and attach an IAM role with SSM permissions."
+            exit 1
+          fi
+
+          echo "SSM ping status for $INSTANCE_ID: $PING_STATUS"
+
+          cat > /tmp/build_ssm_payload.py <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          commands = [
+              "set -euo pipefail",
+              f'AWS_REGION="{os.environ["AWS_REGION"]}"',
+              f'ECR_REGISTRY="{os.environ["ECR_REGISTRY"]}"',
+              f'ECR_REPOSITORY="{os.environ["ECR_REPOSITORY"]}"',
+              f'IMAGE_TAG="{os.environ["IMAGE_TAG"]}"',
+              f'REMOTE_APP_DIR="{os.environ["REMOTE_APP_DIR"]}"',
+              'REMOTE_BASE_DIR="$(dirname "$REMOTE_APP_DIR")"',
+              f'REPOSITORY_URL="{os.environ["REPOSITORY_URL"]}"',
+              'SERVICES="config-server api-gateway order-service payment-service search-service ticket-service user-service"',
+              'echo "Preparing remote app directory..."',
+              'echo "Remote app directory: $REMOTE_APP_DIR"',
+              'mkdir -p "$REMOTE_BASE_DIR"',
+              'if [ -d "$REMOTE_APP_DIR/.git" ]; then',
+              '  echo "Existing git repository found. Updating it..."',
+              '  cd "$REMOTE_APP_DIR"',
+              '  git fetch origin main',
+              '  git reset --hard origin/main',
+              'elif [ ! -e "$REMOTE_APP_DIR" ]; then',
+              '  echo "Remote app directory does not exist. Cloning repository..."',
+              '  git clone --branch main "$REPOSITORY_URL" "$REMOTE_APP_DIR"',
+              '  cd "$REMOTE_APP_DIR"',
+              'elif [ -d "$REMOTE_APP_DIR" ] && [ -z "$(find "$REMOTE_APP_DIR" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null || true)" ]; then',
+              '  echo "Remote app directory is empty. Cloning repository..."',
+              '  rm -rf "$REMOTE_APP_DIR"',
+              '  git clone --branch main "$REPOSITORY_URL" "$REMOTE_APP_DIR"',
+              '  cd "$REMOTE_APP_DIR"',
+              'else',
+              '  BACKUP_DIR="${REMOTE_APP_DIR}.bak.$(date +%Y%m%d%H%M%S)"',
+              '  echo "$REMOTE_APP_DIR exists, but it is not a git repository."',
+              '  echo "Moving existing directory to $BACKUP_DIR"',
+              '  mv "$REMOTE_APP_DIR" "$BACKUP_DIR"',
+              '  git clone --branch main "$REPOSITORY_URL" "$REMOTE_APP_DIR"',
+              '  cd "$REMOTE_APP_DIR"',
+              'fi',
+              'echo "Logging in to ECR..."',
+              'aws ecr get-login-password --region "$AWS_REGION" | docker login --username AWS --password-stdin "$ECR_REGISTRY"',
+              'export ECR_REGISTRY',
+              'export ECR_REPOSITORY',
+              'export IMAGE_TAG',
+              'if [ ! -f docker-compose.ecr.yml ]; then',
+              '  echo "docker-compose.ecr.yml was not found in $REMOTE_APP_DIR."',
+              '  echo "Create it yourself before deploying, or commit it to the repository."',
+              '  exit 1',
+              'fi',
+              'echo "Using Docker Compose ECR override:"',
+              "sed -n '1,80p' docker-compose.ecr.yml",
+              'echo "Pulling service images..."',
+              'for SERVICE in $SERVICES; do',
+              '  IMAGE_URI="${ECR_REGISTRY}/${ECR_REPOSITORY}:${SERVICE}-${IMAGE_TAG}"',
+              '  echo "Pulling $IMAGE_URI"',
+              '  docker pull "$IMAGE_URI"',
+              'done',
+              'echo "Docker versions:"',
+              'docker --version',
+              'docker compose version',
+              'echo "Validating Docker Compose files..."',
+              'docker compose -f docker-compose.yml -f docker-compose.ecr.yml config --quiet',
+              'echo "Starting services with Docker Compose..."',
+              'docker compose -f docker-compose.yml -f docker-compose.ecr.yml up -d --no-build',
+              'echo "Service container status:"',
+              'docker compose -f docker-compose.yml -f docker-compose.ecr.yml ps',
+              'echo "Recent API gateway logs:"',
+              'docker logs api-gateway --tail=80 || true',
+              'echo "Cleaning old images..."',
+              'docker image prune -af || true',
+          ]
+
+          Path("/tmp/ssm-commands.json").write_text(json.dumps({"commands": commands}), encoding="utf-8")
+          PY
+
+          python /tmp/build_ssm_payload.py
+
+          COMMAND_ID="$(aws ssm send-command \
+            --region "$AWS_REGION" \
+            --instance-ids "$INSTANCE_ID" \
+            --document-name "AWS-RunShellScript" \
+            --comment "Deploy ${GITHUB_REPOSITORY}@${GITHUB_SHA}" \
+            --parameters file:///tmp/ssm-commands.json \
+            --query 'Command.CommandId' \
+            --output text)"
+
+          echo "SSM command id: $COMMAND_ID"
+
+          aws ssm wait command-executed \
+            --region "$AWS_REGION" \
+            --command-id "$COMMAND_ID" \
+            --instance-id "$INSTANCE_ID"
+
+          STATUS="$(aws ssm get-command-invocation \
+            --region "$AWS_REGION" \
+            --command-id "$COMMAND_ID" \
+            --instance-id "$INSTANCE_ID" \
+            --query 'Status' \
+            --output text)"
+
+          echo "SSM command status: $STATUS"
+          echo "SSM standard output:"
+          aws ssm get-command-invocation \
+            --region "$AWS_REGION" \
+            --command-id "$COMMAND_ID" \
+            --instance-id "$INSTANCE_ID" \
+            --query 'StandardOutputContent' \
+            --output text || true
+
+          echo "SSM standard error:"
+          aws ssm get-command-invocation \
+            --region "$AWS_REGION" \
+            --command-id "$COMMAND_ID" \
+            --instance-id "$INSTANCE_ID" \
+            --query 'StandardErrorContent' \
+            --output text || true
+
+          if [ "$STATUS" != "Success" ]; then
+            echo "::error::SSM deployment failed with status $STATUS."
+            exit 1
+          fi

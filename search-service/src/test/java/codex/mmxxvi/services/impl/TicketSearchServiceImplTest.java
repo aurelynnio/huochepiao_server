@@ -5,72 +5,59 @@ import codex.mmxxvi.dto.request.PageRequestDto;
 import codex.mmxxvi.dto.request.SearchTicketRequest;
 import codex.mmxxvi.dto.response.PageResponse;
 import codex.mmxxvi.dto.response.SearchTicketResponse;
+import codex.mmxxvi.entity.SearchTicketDocument;
 import codex.mmxxvi.exception.AppExceptions;
-import com.sun.net.httpserver.HttpServer;
-import tools.jackson.databind.ObjectMapper;
-import org.junit.jupiter.api.AfterEach;
+import com.mongodb.client.result.DeleteResult;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.ReactiveSecurityContextHolder;
-import org.springframework.security.oauth2.jwt.Jwt;
-import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
+import org.mockito.ArgumentCaptor;
+import org.springframework.data.mongodb.core.ReactiveMongoTemplate;
+import org.springframework.data.mongodb.core.query.Query;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import tools.jackson.databind.ObjectMapper;
 
-import java.io.IOException;
-import java.net.InetSocketAddress;
-import java.nio.charset.StandardCharsets;
-import java.time.Instant;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 class TicketSearchServiceImplTest {
 
-    private static final UUID USER_ID = UUID.fromString("11111111-1111-1111-1111-111111111111");
     private static final UUID TICKET_ID = UUID.fromString("22222222-2222-2222-2222-222222222222");
 
-    private HttpServer server;
-    private CapturedRequest capturedRequest;
+    private ReactiveMongoTemplate mongoTemplate;
+    private TicketSearchServiceImpl service;
 
     @BeforeEach
-    void setUp() throws IOException {
-        server = HttpServer.create(new InetSocketAddress(0), 0);
-        server.start();
-    }
-
-    @AfterEach
-    void tearDown() {
-        server.stop(0);
+    void setUp() {
+        mongoTemplate = mock(ReactiveMongoTemplate.class);
+        service = new TicketSearchServiceImpl(mongoTemplate, new ObjectMapper(), "tickets");
     }
 
     @Test
-    void searchTicketsMapsElasticsearchHitsToPageResponse() {
-        respond(200, """
-                {
-                  "hits": {
-                    "total": {"value": 1},
-                    "hits": [
-                      {
-                        "_score": 2.5,
-                        "_source": {
-                          "id": "22222222-2222-2222-2222-222222222222",
-                          "title": "Rock Night",
-                          "status": 0,
-                          "ticketItems": []
-                        }
-                      }
-                    ]
-                  }
-                }
-                """);
-        TicketSearchServiceImpl service = service();
+    void searchTicketsMapsMongoDocumentsToPageResponse() {
         SearchTicketRequest request = new SearchTicketRequest();
         request.setDepartureStation("Sai Gon");
         request.setSeatClass("Khoang 4");
+
+        SearchTicketDocument document = SearchTicketDocument.builder()
+                .id(TICKET_ID)
+                .title("Rock Night")
+                .status(0)
+                .ticketItems(List.of())
+                .build();
+
+        when(mongoTemplate.count(any(Query.class), eq(SearchTicketDocument.class), eq("tickets")))
+                .thenReturn(Mono.just(1L));
+        when(mongoTemplate.find(any(Query.class), eq(SearchTicketDocument.class), eq("tickets")))
+                .thenReturn(Flux.just(document));
 
         PageResponse<SearchTicketResponse> response = service
                 .searchTickets("rock", request, new PageRequestDto(0, 10))
@@ -79,19 +66,23 @@ class TicketSearchServiceImplTest {
         assertThat(response).isNotNull();
         assertThat(response.getContent()).hasSize(1);
         assertThat(response.getContent().getFirst().getId()).isEqualTo(TICKET_ID);
-        assertThat(response.getContent().getFirst().getScore()).isEqualTo(2.5);
+        assertThat(response.getContent().getFirst().getScore()).isNull();
         assertThat(response.getTotalElements()).isEqualTo(1);
-        assertThat(capturedRequest.method()).isEqualTo("POST");
-        assertThat(capturedRequest.uri()).isEqualTo("/tickets/_search");
-        assertThat(capturedRequest.body()).contains("\"operator\":\"and\"");
-        assertThat(capturedRequest.body()).contains("departureStationName");
-        assertThat(capturedRequest.body()).contains("ticketItems.seatClass");
+
+        ArgumentCaptor<Query> queryCaptor = ArgumentCaptor.forClass(Query.class);
+        verify(mongoTemplate).find(queryCaptor.capture(), eq(SearchTicketDocument.class), eq("tickets"));
+        String queryJson = queryCaptor.getValue().getQueryObject().toJson();
+        assertThat(queryJson).contains("departureStationName");
+        assertThat(queryJson).contains("seatClass");
+        assertThat(queryJson).contains("stockAvailable");
     }
 
     @Test
-    void searchTicketsReturnsEmptyPageWhenIndexDoesNotExist() {
-        respond(404, "{\"error\":\"not found\"}");
-        TicketSearchServiceImpl service = service();
+    void searchTicketsReturnsEmptyPageWhenNoDocumentsMatch() {
+        when(mongoTemplate.count(any(Query.class), eq(SearchTicketDocument.class), eq("tickets")))
+                .thenReturn(Mono.just(0L));
+        when(mongoTemplate.find(any(Query.class), eq(SearchTicketDocument.class), eq("tickets")))
+                .thenReturn(Flux.empty());
 
         PageResponse<SearchTicketResponse> response = service
                 .searchTickets(null, new SearchTicketRequest(), new PageRequestDto(0, 10))
@@ -103,93 +94,41 @@ class TicketSearchServiceImplTest {
     }
 
     @Test
-    void indexTicketRequiresTicketIdBeforeCallingElasticsearch() {
-        TicketSearchServiceImpl service = service();
+    void indexTicketRequiresTicketIdBeforeSaving() {
         IndexTicketRequest request = new IndexTicketRequest(
                 null, "No id", null, null, null, null, null, null, null, null, 0, List.of(), null, null, null
         );
 
-        assertThatThrownBy(() -> withAuth(service.indexTicket(request), USER_ID, 1, "search.index"))
+        assertThatThrownBy(() -> service.indexTicket(request).block())
                 .isInstanceOf(AppExceptions.BadRequestException.class);
     }
 
     @Test
-    void indexTicketSendsPutRequestWhenAdminHasSearchIndexScope() {
-        respond(200, "{}");
-        TicketSearchServiceImpl service = service();
+    void indexTicketSavesMongoDocument() {
         IndexTicketRequest request = new IndexTicketRequest(
                 TICKET_ID, "Rock Night", "SE1", "SGN", "Sai Gon", "DAD", "Da Nang", null, null, null, 0, List.of(), null, null, null
         );
 
-        withAuth(service.indexTicket(request), USER_ID, 1, "search.index");
-
-        assertThat(capturedRequest.method()).isEqualTo("PUT");
-        assertThat(capturedRequest.uri()).isEqualTo("/tickets/_doc/" + TICKET_ID + "?refresh=wait_for");
-        assertThat(capturedRequest.body()).contains("\"title\":\"Rock Night\"");
-    }
-
-    @Test
-    void deleteTicketIgnoresElasticsearchNotFound() {
-        respond(404, "{\"error\":\"not found\"}");
-        TicketSearchServiceImpl service = service();
-
-        withAuth(service.deleteTicket(TICKET_ID), USER_ID, 1, "search.index");
-
-        assertThat(capturedRequest.method()).isEqualTo("DELETE");
-        assertThat(capturedRequest.uri()).isEqualTo("/tickets/_doc/" + TICKET_ID + "?refresh=wait_for");
-    }
-
-    @Test
-    void indexTicketDoesNotRequireJwtContext() {
-        respond(200, "{}");
-        TicketSearchServiceImpl service = service();
-        IndexTicketRequest request = new IndexTicketRequest(
-                TICKET_ID, "Rock Night", "SE1", "SGN", "Sai Gon", "DAD", "Da Nang", null, null, null, 0, List.of(), null, null, null
-        );
+        when(mongoTemplate.save(any(SearchTicketDocument.class), eq("tickets")))
+                .thenReturn(Mono.just(SearchTicketDocument.builder().id(TICKET_ID).title("Rock Night").build()));
 
         service.indexTicket(request).block();
 
-        assertThat(capturedRequest.method()).isEqualTo("PUT");
+        ArgumentCaptor<SearchTicketDocument> documentCaptor = ArgumentCaptor.forClass(SearchTicketDocument.class);
+        verify(mongoTemplate).save(documentCaptor.capture(), eq("tickets"));
+        assertThat(documentCaptor.getValue().getId()).isEqualTo(TICKET_ID);
+        assertThat(documentCaptor.getValue().getTitle()).isEqualTo("Rock Night");
     }
 
-    private TicketSearchServiceImpl service() {
-        return new TicketSearchServiceImpl(new ObjectMapper(), "http://localhost:" + server.getAddress().getPort(), "tickets");
-    }
+    @Test
+    void deleteTicketRemovesMongoDocument() {
+        when(mongoTemplate.remove(any(Query.class), eq(SearchTicketDocument.class), eq("tickets")))
+                .thenReturn(Mono.just(DeleteResult.acknowledged(1L)));
 
-    private void respond(int status, String body) {
-        server.createContext("/", exchange -> {
-            String requestBody = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
-            capturedRequest = new CapturedRequest(exchange.getRequestMethod(), exchange.getRequestURI().toString(), requestBody);
+        service.deleteTicket(TICKET_ID).block();
 
-            byte[] responseBody = body.getBytes(StandardCharsets.UTF_8);
-            exchange.getResponseHeaders().set("Content-Type", "application/json");
-            exchange.sendResponseHeaders(status, responseBody.length);
-            exchange.getResponseBody().write(responseBody);
-            exchange.close();
-        });
-    }
-
-    private <T> T withAuth(Mono<T> mono, UUID userId, int role, String scopes) {
-        return mono.contextWrite(ReactiveSecurityContextHolder.withAuthentication(authentication(userId, role, scopes)))
-                .block();
-    }
-
-    private Authentication authentication(UUID userId, int role, String scopes) {
-        Jwt jwt = Jwt.withTokenValue("test-token")
-                .header("alg", "none")
-                .issuedAt(Instant.now())
-                .expiresAt(Instant.now().plusSeconds(300))
-                .claims(claims -> claims.putAll(Map.of(
-                        "tenantId", "public",
-                        "userId", userId.toString(),
-                        "role", role,
-                        "scope", scopes,
-                        "type", "access"
-                )))
-                .build();
-        return new JwtAuthenticationToken(jwt, List.of());
-    }
-
-    private record CapturedRequest(String method, String uri, String body) {
+        ArgumentCaptor<Query> queryCaptor = ArgumentCaptor.forClass(Query.class);
+        verify(mongoTemplate).remove(queryCaptor.capture(), eq(SearchTicketDocument.class), eq("tickets"));
+        assertThat(queryCaptor.getValue().getQueryObject()).containsKey("_id");
     }
 }
