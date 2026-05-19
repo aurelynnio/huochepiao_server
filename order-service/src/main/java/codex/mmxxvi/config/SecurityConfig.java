@@ -19,6 +19,8 @@ public class SecurityConfig {
                 .formLogin(ServerHttpSecurity.FormLoginSpec::disable)
                 .logout(ServerHttpSecurity.LogoutSpec::disable)
                 .authorizeExchange(exchange -> exchange
+                    .pathMatchers("/v1/internal/orders/**")
+                    .permitAll()
                     .pathMatchers(HttpMethod.GET, "/v1/orders", "/v1/orders/**")
                     .hasAnyAuthority("SCOPE_order.read", "SCOPE_order.read.self", "SCOPE_order.admin")
                     .pathMatchers(HttpMethod.POST, "/v1/orders", "/v1/orders/**")

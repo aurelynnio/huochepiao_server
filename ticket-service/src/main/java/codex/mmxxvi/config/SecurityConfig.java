@@ -19,6 +19,8 @@ public class SecurityConfig {
                 .formLogin(ServerHttpSecurity.FormLoginSpec::disable)
                 .logout(ServerHttpSecurity.LogoutSpec::disable)
                 .authorizeExchange(exchange -> exchange
+                    .pathMatchers("/v1/internal/ticket-items/**")
+                    .permitAll()
                     .pathMatchers(HttpMethod.GET, "/v1/tickets", "/v1/tickets/**")
                     .hasAnyAuthority("SCOPE_ticket.read", "SCOPE_ticket.write")
                     .pathMatchers(HttpMethod.POST, "/v1/tickets", "/v1/tickets/**")

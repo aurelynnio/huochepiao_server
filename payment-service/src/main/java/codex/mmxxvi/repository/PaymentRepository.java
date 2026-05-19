@@ -14,4 +14,5 @@ public interface PaymentRepository extends JpaRepository<Payment, UUID> {
     Optional<Payment> findByTransactionId(UUID transactionId);
     Optional<Payment> findByTransactionIdAndUserId(UUID transactionId, UUID userId);
     Page<Payment> findByUserId(UUID userId, Pageable pageable);
+    boolean existsByOrderIdAndStatus(UUID orderId, Integer status);
 }

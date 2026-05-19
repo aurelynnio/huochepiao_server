@@ -1,5 +1,7 @@
 package codex.mmxxvi.services.impl;
 
+import codex.mmxxvi.integration.ticket.TicketInventoryClient;
+import codex.mmxxvi.dto.integration.ticket.TicketItemSnapshotResponse;
 import codex.mmxxvi.dto.request.CreateOrderRequest;
 import codex.mmxxvi.dto.request.PageRequestDto;
 import codex.mmxxvi.dto.response.OrderResponse;
@@ -7,6 +9,7 @@ import codex.mmxxvi.dto.response.PageResponse;
 import codex.mmxxvi.entity.Order;
 import codex.mmxxvi.exception.AppExceptions;
 import codex.mmxxvi.repository.OrderRepository;
+import codex.mmxxvi.support.InternalApiKeyService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -30,6 +33,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -44,11 +48,18 @@ class OrderServiceImplTest {
     @Mock
     private OrderRepository orderRepository;
 
+    @Mock
+    private TicketInventoryClient ticketInventoryClient;
+
     private OrderServiceImpl orderService;
 
     @BeforeEach
     void setUp() {
-        orderService = new OrderServiceImpl(orderRepository);
+        orderService = new OrderServiceImpl(
+                orderRepository,
+                ticketInventoryClient,
+                new InternalApiKeyService("internal-test-key")
+        );
     }
 
     @Test
@@ -106,6 +117,8 @@ class OrderServiceImplTest {
                 .unitPrice(50_000L)
                 .totalPrice(100_000L)
                 .build();
+        when(ticketInventoryClient.reserveTicketItem(eq("internal-test-key"), eq(TICKET_ITEM_ID), any()))
+                .thenReturn(ticketItem());
 
         when(orderRepository.save(any(Order.class))).thenAnswer(invocation -> {
             Order order = invocation.getArgument(0);
@@ -117,7 +130,9 @@ class OrderServiceImplTest {
 
         assertThat(response.getId()).isEqualTo(ORDER_ID);
         assertThat(response.getStatus()).isZero();
-        verify(orderRepository).save(any(Order.class));
+        assertThat(response.getQrPayload()).contains("orderId=" + ORDER_ID);
+        assertThat(response.getPassengers()).hasSize(2);
+        verify(orderRepository, times(2)).save(any(Order.class));
     }
 
     @Test
@@ -126,7 +141,7 @@ class OrderServiceImplTest {
         when(orderRepository.findById(ORDER_ID)).thenReturn(Optional.of(order));
         when(orderRepository.save(any(Order.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        OrderResponse response = withAuth(orderService.updateStatus(ORDER_ID, true), OTHER_USER_ID, 1, "order.admin");
+        OrderResponse response = withAuth(orderService.updateStatus(ORDER_ID, 1), OTHER_USER_ID, 1, "order.admin");
 
         assertThat(response.getStatus()).isEqualTo(1);
     }
@@ -135,6 +150,8 @@ class OrderServiceImplTest {
     void cancelOrderAllowsOwnerToCancelPendingOrder() {
         Order order = order(USER_ID, 0);
         when(orderRepository.findById(ORDER_ID)).thenReturn(Optional.of(order));
+        when(ticketInventoryClient.releaseTicketItem(eq("internal-test-key"), eq(TICKET_ITEM_ID), any()))
+                .thenReturn(ticketItem());
         when(orderRepository.save(any(Order.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         OrderResponse response = withAuth(
@@ -191,6 +208,18 @@ class OrderServiceImplTest {
                 .totalPrice(100_000L)
                 .status(status)
                 .build();
+    }
+
+    private TicketItemSnapshotResponse ticketItem() {
+        TicketItemSnapshotResponse response = new TicketItemSnapshotResponse();
+        response.setTicketId(UUID.fromString("55555555-5555-5555-5555-555555555555"));
+        response.setTicketItemId(TICKET_ITEM_ID);
+        response.setPriceFlash(50_000L);
+        response.setPriceOriginal(60_000L);
+        response.setStockAvailable(10);
+        response.setStockInitial(10);
+        response.setStockPrepared(true);
+        return response;
     }
 
     private <T> T withAuth(Mono<T> mono, UUID userId, int role, String scopes) {

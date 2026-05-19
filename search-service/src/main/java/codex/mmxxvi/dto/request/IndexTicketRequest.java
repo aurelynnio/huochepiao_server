@@ -17,6 +17,12 @@ public class IndexTicketRequest {
     @NotNull(message = "id is required")
     private UUID id;
     private String title;
+    private String trainNumber;
+    private String departureStationCode;
+    private String departureStationName;
+    private String arrivalStationCode;
+    private String arrivalStationName;
+    private String journeyNote;
     private LocalDateTime dateStart;
     private LocalDateTime dateEnd;
     private Integer status;

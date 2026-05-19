@@ -1,4 +1,4 @@
-package codex.mmxxvi.client.search.dto;
+package codex.mmxxvi.dto.integration.search;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -14,6 +14,12 @@ import lombok.NoArgsConstructor;
 public class IndexTicketRequest {
     private UUID id;
     private String title;
+    private String trainNumber;
+    private String departureStationCode;
+    private String departureStationName;
+    private String arrivalStationCode;
+    private String arrivalStationName;
+    private String journeyNote;
     private LocalDateTime dateStart;
     private LocalDateTime dateEnd;
     private Integer status;

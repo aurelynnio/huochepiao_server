@@ -7,6 +7,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import codex.mmxxvi.dto.request.PageRequestDto;
+import codex.mmxxvi.dto.request.SearchTicketRequest;
 import codex.mmxxvi.dto.response.PageResponse;
 import codex.mmxxvi.dto.response.SearchTicketResponse;
 import codex.mmxxvi.services.TicketSearchService;
@@ -26,8 +27,9 @@ public class TicketSearchController {
     @GetMapping({"/", ""})
     public Mono<PageResponse<SearchTicketResponse>> searchTickets(
             @RequestParam(name = "q", required = false) String keyword,
+            @Valid @ModelAttribute SearchTicketRequest searchTicketRequest,
             @Valid @ModelAttribute PageRequestDto pageRequestDto
     ) {
-        return ticketSearchService.searchTickets(keyword, pageRequestDto);
+        return ticketSearchService.searchTickets(keyword, searchTicketRequest, pageRequestDto);
     }
 }

@@ -2,6 +2,7 @@ package codex.mmxxvi.services.impl;
 
 import codex.mmxxvi.dto.request.IndexTicketRequest;
 import codex.mmxxvi.dto.request.PageRequestDto;
+import codex.mmxxvi.dto.request.SearchTicketRequest;
 import codex.mmxxvi.dto.response.PageResponse;
 import codex.mmxxvi.dto.response.SearchTicketResponse;
 import codex.mmxxvi.exception.AppExceptions;
@@ -67,9 +68,12 @@ class TicketSearchServiceImplTest {
                 }
                 """);
         TicketSearchServiceImpl service = service();
+        SearchTicketRequest request = new SearchTicketRequest();
+        request.setDepartureStation("Sai Gon");
+        request.setSeatClass("Khoang 4");
 
         PageResponse<SearchTicketResponse> response = service
-                .searchTickets("rock", new PageRequestDto(0, 10))
+                .searchTickets("rock", request, new PageRequestDto(0, 10))
                 .block();
 
         assertThat(response).isNotNull();
@@ -80,6 +84,8 @@ class TicketSearchServiceImplTest {
         assertThat(capturedRequest.method()).isEqualTo("POST");
         assertThat(capturedRequest.uri()).isEqualTo("/tickets/_search");
         assertThat(capturedRequest.body()).contains("\"operator\":\"and\"");
+        assertThat(capturedRequest.body()).contains("departureStationName");
+        assertThat(capturedRequest.body()).contains("ticketItems.seatClass");
     }
 
     @Test
@@ -88,7 +94,7 @@ class TicketSearchServiceImplTest {
         TicketSearchServiceImpl service = service();
 
         PageResponse<SearchTicketResponse> response = service
-                .searchTickets(null, new PageRequestDto(0, 10))
+                .searchTickets(null, new SearchTicketRequest(), new PageRequestDto(0, 10))
                 .block();
 
         assertThat(response).isNotNull();
@@ -99,7 +105,9 @@ class TicketSearchServiceImplTest {
     @Test
     void indexTicketRequiresTicketIdBeforeCallingElasticsearch() {
         TicketSearchServiceImpl service = service();
-        IndexTicketRequest request = new IndexTicketRequest(null, "No id", null, null, 0, List.of(), null, null, null);
+        IndexTicketRequest request = new IndexTicketRequest(
+                null, "No id", null, null, null, null, null, null, null, null, 0, List.of(), null, null, null
+        );
 
         assertThatThrownBy(() -> withAuth(service.indexTicket(request), USER_ID, 1, "search.index"))
                 .isInstanceOf(AppExceptions.BadRequestException.class);
@@ -109,7 +117,9 @@ class TicketSearchServiceImplTest {
     void indexTicketSendsPutRequestWhenAdminHasSearchIndexScope() {
         respond(200, "{}");
         TicketSearchServiceImpl service = service();
-        IndexTicketRequest request = new IndexTicketRequest(TICKET_ID, "Rock Night", null, null, 0, List.of(), null, null, null);
+        IndexTicketRequest request = new IndexTicketRequest(
+                TICKET_ID, "Rock Night", "SE1", "SGN", "Sai Gon", "DAD", "Da Nang", null, null, null, 0, List.of(), null, null, null
+        );
 
         withAuth(service.indexTicket(request), USER_ID, 1, "search.index");
 
@@ -130,12 +140,16 @@ class TicketSearchServiceImplTest {
     }
 
     @Test
-    void indexTicketRequiresAdminRole() {
+    void indexTicketDoesNotRequireJwtContext() {
+        respond(200, "{}");
         TicketSearchServiceImpl service = service();
-        IndexTicketRequest request = new IndexTicketRequest(TICKET_ID, "Rock Night", null, null, 0, List.of(), null, null, null);
+        IndexTicketRequest request = new IndexTicketRequest(
+                TICKET_ID, "Rock Night", "SE1", "SGN", "Sai Gon", "DAD", "Da Nang", null, null, null, 0, List.of(), null, null, null
+        );
 
-        assertThatThrownBy(() -> withAuth(service.indexTicket(request), USER_ID, 0, "search.index"))
-                .isInstanceOf(AppExceptions.ForbiddenException.class);
+        service.indexTicket(request).block();
+
+        assertThat(capturedRequest.method()).isEqualTo("PUT");
     }
 
     private TicketSearchServiceImpl service() {

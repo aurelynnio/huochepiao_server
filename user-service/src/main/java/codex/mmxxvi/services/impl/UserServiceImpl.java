@@ -1,14 +1,19 @@
 package codex.mmxxvi.services.impl;
 
 import codex.mmxxvi.dto.request.CreateUserRequest;
+import codex.mmxxvi.dto.request.ForgotPasswordRequest;
 import codex.mmxxvi.dto.request.LoginRequest;
 import codex.mmxxvi.dto.request.PageRequestDto;
+import codex.mmxxvi.dto.request.ResetPasswordRequest;
 import codex.mmxxvi.dto.request.UpdateUserRequest;
 import codex.mmxxvi.dto.response.JwtResponse;
 import codex.mmxxvi.dto.response.PageResponse;
+import codex.mmxxvi.dto.response.PasswordResetResponse;
 import codex.mmxxvi.dto.response.UserResponse;
+import codex.mmxxvi.entity.PasswordResetToken;
 import codex.mmxxvi.entity.User;
 import codex.mmxxvi.exception.AppExceptions;
+import codex.mmxxvi.repository.PasswordResetTokenRepository;
 import codex.mmxxvi.repository.UserRepository;
 import codex.mmxxvi.services.JwtService;
 import codex.mmxxvi.services.UserService;
@@ -23,26 +28,44 @@ import org.springframework.security.core.context.ReactiveSecurityContextHolder;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.security.SecureRandom;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.UUID;
 import java.util.Set;
 import java.util.stream.Collectors;
+import java.time.LocalDateTime;
 
 @Service
 public class UserServiceImpl implements UserService {
     private static final Set<String> ALLOWED_SORT_FIELDS = Set.of("id", "username", "email", "role");
     private static final int ROLE_ADMIN = 1;
+    private static final int PASSWORD_RESET_EXPIRY_MINUTES = 15;
+    private static final String RESET_TOKEN_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
+    private final PasswordResetTokenRepository passwordResetTokenRepository;
+    private final boolean passwordResetPreviewEnabled;
+    private final SecureRandom secureRandom = new SecureRandom();
 
-    public UserServiceImpl(UserRepository userRepository, PasswordEncoder passwordEncoder, JwtService jwtService) {
+    public UserServiceImpl(
+            UserRepository userRepository,
+            PasswordEncoder passwordEncoder,
+            JwtService jwtService,
+            PasswordResetTokenRepository passwordResetTokenRepository,
+            @org.springframework.beans.factory.annotation.Value("${app.auth.password-reset.preview-enabled:${PASSWORD_RESET_PREVIEW_ENABLED:true}}") boolean passwordResetPreviewEnabled
+    ) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtService = jwtService;
+        this.passwordResetTokenRepository = passwordResetTokenRepository;
+        this.passwordResetPreviewEnabled = passwordResetPreviewEnabled;
     }
 
     private UserResponse convertDTO(User user) {
@@ -149,6 +172,55 @@ public class UserServiceImpl implements UserService {
     }
 
     @Override
+    public Mono<PasswordResetResponse> requestPasswordReset(ForgotPasswordRequest request) {
+        return Mono.fromCallable(() -> {
+                    String previewToken = null;
+                    User user = userRepository.findByEmail(request.getEmail()).orElse(null);
+
+                    if (user != null) {
+                        passwordResetTokenRepository.deleteByUserId(user.getId());
+
+                        String rawToken = generateResetToken();
+                        PasswordResetToken token = PasswordResetToken.builder()
+                                .userId(user.getId())
+                                .tokenHash(hashResetToken(rawToken))
+                                .expiresAt(LocalDateTime.now().plusMinutes(PASSWORD_RESET_EXPIRY_MINUTES))
+                                .build();
+                        passwordResetTokenRepository.save(token);
+                        previewToken = passwordResetPreviewEnabled ? rawToken : null;
+                    }
+
+                    return PasswordResetResponse.builder()
+                            .message("If the email exists, a reset code has been issued")
+                            .previewToken(previewToken)
+                            .expiresInSeconds(PASSWORD_RESET_EXPIRY_MINUTES * 60L)
+                            .build();
+                })
+                .subscribeOn(Schedulers.boundedElastic());
+    }
+
+    @Override
+    public Mono<Void> resetPassword(ResetPasswordRequest request) {
+        return Mono.fromRunnable(() -> {
+                    PasswordResetToken token = passwordResetTokenRepository.findByTokenHash(hashResetToken(request.getToken()))
+                            .orElseThrow(() -> new AppExceptions.BadRequestException("Reset token is invalid or expired"));
+
+                    if (token.getExpiresAt().isBefore(LocalDateTime.now())) {
+                        passwordResetTokenRepository.deleteByUserId(token.getUserId());
+                        throw new AppExceptions.BadRequestException("Reset token is invalid or expired");
+                    }
+
+                    User user = userRepository.findById(token.getUserId())
+                            .orElseThrow(() -> new AppExceptions.ResourceNotFoundException("User not found"));
+                    user.setPassword(passwordEncoder.encode(request.getPassword()));
+                    userRepository.save(user);
+                    passwordResetTokenRepository.deleteByUserId(user.getId());
+                })
+                .subscribeOn(Schedulers.boundedElastic())
+                .then();
+    }
+
+    @Override
     public Mono<Void> delete(String id) {
         UUID targetUserId = parseUserId(id);
 
@@ -234,6 +306,29 @@ public class UserServiceImpl implements UserService {
     private void validateTextField(String value, String fieldName) {
         if (!StringUtils.hasText(value)) {
             throw new AppExceptions.BadRequestException(fieldName + " must not be blank");
+        }
+    }
+
+    private String generateResetToken() {
+        StringBuilder builder = new StringBuilder(8);
+        for (int index = 0; index < 8; index++) {
+            int randomIndex = secureRandom.nextInt(RESET_TOKEN_ALPHABET.length());
+            builder.append(RESET_TOKEN_ALPHABET.charAt(randomIndex));
+        }
+        return builder.toString();
+    }
+
+    private String hashResetToken(String token) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] hash = digest.digest(token.trim().toUpperCase().getBytes(StandardCharsets.UTF_8));
+            StringBuilder builder = new StringBuilder(hash.length * 2);
+            for (byte value : hash) {
+                builder.append(String.format("%02x", value));
+            }
+            return builder.toString();
+        } catch (NoSuchAlgorithmException ex) {
+            throw new AppExceptions.InternalServerErrorException("Failed to hash reset token", ex);
         }
     }
 

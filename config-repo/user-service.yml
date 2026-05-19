@@ -37,6 +37,11 @@ spring:
 server:
   port: ${SERVER_PORT:8081}
 
+app:
+  auth:
+    password-reset:
+      preview-enabled: ${PASSWORD_RESET_PREVIEW_ENABLED:true}
+
 jwt:
   issuer: ${JWT_ISSUER:http://localhost:8081}
   key-id: ${JWT_KEY_ID:user-service-key-1}

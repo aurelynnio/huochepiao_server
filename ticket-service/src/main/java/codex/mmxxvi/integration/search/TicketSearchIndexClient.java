@@ -1,16 +1,15 @@
-package codex.mmxxvi.client.search;
+package codex.mmxxvi.integration.search;
 
 import java.util.UUID;
 
 import org.springframework.cloud.openfeign.FeignClient;
-import org.springframework.http.HttpHeaders;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 
-import codex.mmxxvi.client.search.dto.IndexTicketRequest;
+import codex.mmxxvi.dto.integration.search.IndexTicketRequest;
 
 @FeignClient(
         name = "search-service",
@@ -21,13 +20,13 @@ public interface TicketSearchIndexClient {
 
     @PostMapping
     void indexTicket(
-            @RequestHeader(HttpHeaders.AUTHORIZATION) String authorization,
+            @RequestHeader("X-Internal-Key") String internalApiKey,
             @RequestBody IndexTicketRequest request
     );
 
     @DeleteMapping("/{ticketId}")
     void deleteTicket(
-            @RequestHeader(HttpHeaders.AUTHORIZATION) String authorization,
+            @RequestHeader("X-Internal-Key") String internalApiKey,
             @PathVariable UUID ticketId
     );
 }

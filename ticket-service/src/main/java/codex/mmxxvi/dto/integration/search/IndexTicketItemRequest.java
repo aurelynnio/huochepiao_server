@@ -1,6 +1,7 @@
-package codex.mmxxvi.client.search.dto;
+package codex.mmxxvi.dto.integration.search;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.UUID;
 
 import lombok.AllArgsConstructor;
@@ -15,6 +16,11 @@ public class IndexTicketItemRequest {
     private UUID ticketId;
     private String name;
     private String description;
+    private String coachCode;
+    private String seatClass;
+    private String seatType;
+    private List<String> seatLabels;
+    private List<String> availableSeatLabels;
     private Integer stockInitial;
     private Integer stockAvailable;
     private Boolean stockPrepared;

@@ -9,17 +9,20 @@ import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 import codex.mmxxvi.dto.request.CreateOrderRequest;
+import codex.mmxxvi.dto.internal.InternalOrderResponse;
 import codex.mmxxvi.dto.request.PageRequestDto;
 import codex.mmxxvi.dto.request.UpdateOrderRequest;
 import codex.mmxxvi.dto.response.OrderResponse;
 import codex.mmxxvi.dto.response.PageResponse;
 import codex.mmxxvi.services.OrderService;
+import codex.mmxxvi.support.InternalApiKeyService;
 import jakarta.validation.Valid;
 import reactor.core.publisher.Mono;
 
@@ -27,9 +30,11 @@ import reactor.core.publisher.Mono;
 @RequestMapping("/v1")
 public class OrderController {
     private final OrderService orderService;
+    private final InternalApiKeyService internalApiKeyService;
 
-    public OrderController(OrderService orderService) {
+    public OrderController(OrderService orderService, InternalApiKeyService internalApiKeyService) {
         this.orderService = orderService;
+        this.internalApiKeyService = internalApiKeyService;
     }
 
     @GetMapping("/orders")
@@ -57,5 +62,24 @@ public class OrderController {
     @PatchMapping("/orders/{id}/cancel")
     public Mono<OrderResponse> cancelOrder(@PathVariable UUID id) {
         return orderService.cancelOrder(id);
+    }
+
+    @GetMapping("/internal/orders/{id}")
+    public Mono<InternalOrderResponse> getOrderInternal(
+            @RequestHeader("X-Internal-Key") String internalKey,
+            @PathVariable UUID id
+    ) {
+        internalApiKeyService.validate(internalKey);
+        return orderService.getOrderInternal(id);
+    }
+
+    @PatchMapping("/internal/orders/{id}/status")
+    public Mono<OrderResponse> updateStatusInternal(
+            @RequestHeader("X-Internal-Key") String internalKey,
+            @PathVariable UUID id,
+            @Valid @RequestBody UpdateOrderRequest request
+    ) {
+        internalApiKeyService.validate(internalKey);
+        return orderService.updateStatusInternal(id, request.getStatus());
     }
 }

@@ -1,11 +1,14 @@
 package codex.mmxxvi.controller;
 
 import codex.mmxxvi.dto.request.CreateUserRequest;
+import codex.mmxxvi.dto.request.ForgotPasswordRequest;
 import codex.mmxxvi.dto.request.LoginRequest;
 import codex.mmxxvi.dto.request.PageRequestDto;
+import codex.mmxxvi.dto.request.ResetPasswordRequest;
 import codex.mmxxvi.dto.request.UpdateUserRequest;
 import codex.mmxxvi.config.JwtProperties;
 import codex.mmxxvi.dto.response.PageResponse;
+import codex.mmxxvi.dto.response.PasswordResetResponse;
 import codex.mmxxvi.dto.response.UserResponse;
 import codex.mmxxvi.services.UserService;
 import jakarta.validation.Valid;
@@ -90,6 +93,17 @@ public class UserController {
 
                     return ResponseEntity.ok(session.getUser());
                 });
+    }
+
+    @PostMapping("/forgot-password")
+    public Mono<PasswordResetResponse> forgotPassword(@Valid @RequestBody ForgotPasswordRequest request) {
+        return userService.requestPasswordReset(request);
+    }
+
+    @PostMapping("/reset-password")
+    public Mono<ResponseEntity<Void>> resetPassword(@Valid @RequestBody ResetPasswordRequest request) {
+        return userService.resetPassword(request)
+                .thenReturn(ResponseEntity.noContent().build());
     }
 
     @PostMapping("/logout")

@@ -1,5 +1,8 @@
 package codex.mmxxvi.services.impl;
 
+import codex.mmxxvi.integration.order.OrderClient;
+import codex.mmxxvi.dto.integration.order.InternalOrderResponse;
+import codex.mmxxvi.dto.integration.order.UpdateOrderStatusRequest;
 import codex.mmxxvi.config.VNPayConfig;
 import codex.mmxxvi.dto.request.CreatePaymentRequest;
 import codex.mmxxvi.dto.request.PageRequestDto;
@@ -12,6 +15,7 @@ import codex.mmxxvi.entity.Payment;
 import codex.mmxxvi.exception.AppExceptions;
 import codex.mmxxvi.repository.PaymentRepository;
 import codex.mmxxvi.services.PaymentService;
+import codex.mmxxvi.support.InternalApiKeyService;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.security.core.Authentication;
@@ -44,6 +48,7 @@ import java.util.stream.Collectors;
 
 @Service
 public class PaymentServiceImpl implements PaymentService {
+    private static final int STATUS_PENDING = 0;
     private static final int STATUS_COMPLETED = 1;
     private static final int STATUS_FAILED = 2;
     private static final int STATUS_REFUNDED = 3;
@@ -54,28 +59,40 @@ public class PaymentServiceImpl implements PaymentService {
 
     private final PaymentRepository paymentRepository;
     private final VNPayConfig vnPayConfig;
+    private final OrderClient orderClient;
+    private final InternalApiKeyService internalApiKeyService;
 
-    public PaymentServiceImpl(PaymentRepository paymentRepository, VNPayConfig vnPayConfig){
+    public PaymentServiceImpl(
+            PaymentRepository paymentRepository,
+            VNPayConfig vnPayConfig,
+            OrderClient orderClient,
+            InternalApiKeyService internalApiKeyService
+    ){
         this.paymentRepository = paymentRepository;
         this.vnPayConfig = vnPayConfig;
+        this.orderClient = orderClient;
+        this.internalApiKeyService = internalApiKeyService;
     }
     @Override
     public Mono<PaymentInitResponse> createPayment(CreatePaymentRequest createPaymentRequest, ServerHttpRequest request) {
         return resolveAuthContext().flatMap(authContext ->
             Mono.fromCallable(() -> {
                     requireAnyScope(authContext, "payment.write", "payment.write.self");
+                    InternalOrderResponse order = getOrder(createPaymentRequest.getOrderId());
+                    validatePaymentRequest(authContext, createPaymentRequest, order);
 
                     Payment payment = new Payment();
-                    payment.setOrderId(createPaymentRequest.getOrderId());
+                    payment.setOrderId(order.getId());
                     payment.setUserId(authContext.userId());
-                    payment.setAmount(createPaymentRequest.getAmount());
+                    payment.setAmount(order.getTotalPrice());
                     payment.setPaymentMethod(createPaymentRequest.getPaymentMethod());
-                    payment.setStatus(createPaymentRequest.getStatus() != null ? createPaymentRequest.getStatus() : 0);
+                    payment.setStatus(createPaymentRequest.getStatus() != null ? createPaymentRequest.getStatus() : STATUS_PENDING);
                     payment.setTransactionId(createPaymentRequest.getTransactionId() != null
                         ? createPaymentRequest.getTransactionId()
                         : UUID.randomUUID());
                     payment.setPaidAt(createPaymentRequest.getPaidAt());
                     Payment savedPayment = paymentRepository.save(payment);
+                    syncOrderStatus(savedPayment);
 
                     return PaymentInitResponse.builder()
                         .payment(convertDTO(savedPayment))
@@ -276,6 +293,7 @@ public class PaymentServiceImpl implements PaymentService {
 
                             payment.setStatus(STATUS_REFUNDED);
                             Payment refundedPayment = paymentRepository.save(payment);
+                            syncOrderStatus(refundedPayment);
 
                             return RefundResponse.builder()
                                     .paymentId(refundedPayment.getId())
@@ -346,8 +364,60 @@ public class PaymentServiceImpl implements PaymentService {
         }
 
         paymentRepository.save(payment);
+        syncOrderStatus(payment);
         return isSuccessful ? 1 : 0;
         }).subscribeOn(Schedulers.boundedElastic());
+    }
+
+    private InternalOrderResponse getOrder(UUID orderId) {
+        try {
+            return orderClient.getOrder(internalApiKeyService.getInternalApiKey(), orderId);
+        } catch (AppExceptions.ResourceNotFoundException ex) {
+            throw ex;
+        } catch (Exception ex) {
+            throw new AppExceptions.BadGatewayException("Failed to load order", ex);
+        }
+    }
+
+    private void validatePaymentRequest(AuthContext authContext, CreatePaymentRequest request, InternalOrderResponse order) {
+        if (order.getStatus() == null || order.getStatus() != STATUS_PENDING) {
+            throw new AppExceptions.ConflictException("Only pending orders can be paid");
+        }
+
+        if (!authContext.isAdmin() && !authContext.userId().equals(order.getUserId())) {
+            throw new AppExceptions.ForbiddenException("You cannot pay another user's order");
+        }
+
+        if (!order.getTotalPrice().equals(request.getAmount())) {
+            throw new AppExceptions.BadRequestException("Payment amount does not match order total");
+        }
+
+        if (paymentRepository.existsByOrderIdAndStatus(order.getId(), STATUS_COMPLETED)) {
+            throw new AppExceptions.ConflictException("Order has already been paid");
+        }
+    }
+
+    private void syncOrderStatus(Payment payment) {
+        Integer orderStatus = switch (payment.getStatus()) {
+            case STATUS_COMPLETED -> STATUS_COMPLETED;
+            case STATUS_FAILED -> STATUS_FAILED;
+            case STATUS_REFUNDED -> STATUS_REFUNDED;
+            default -> null;
+        };
+
+        if (orderStatus == null) {
+            return;
+        }
+
+        try {
+            orderClient.updateOrderStatus(
+                    internalApiKeyService.getInternalApiKey(),
+                    payment.getOrderId(),
+                    UpdateOrderStatusRequest.builder().status(orderStatus).build()
+            );
+        } catch (Exception ex) {
+            throw new AppExceptions.BadGatewayException("Failed to sync order status", ex);
+        }
     }
 
     private LocalDateTime parseVnPayDate(String payDate) {

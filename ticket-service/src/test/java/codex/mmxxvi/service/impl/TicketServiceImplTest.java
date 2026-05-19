@@ -1,6 +1,6 @@
 package codex.mmxxvi.service.impl;
 
-import codex.mmxxvi.client.search.TicketSearchIndexClient;
+import codex.mmxxvi.integration.search.TicketSearchIndexClient;
 import codex.mmxxvi.dto.request.CreateTicketRequest;
 import codex.mmxxvi.dto.request.PageRequestDto;
 import codex.mmxxvi.dto.request.UpdateTicketItemRequest;
@@ -13,6 +13,7 @@ import codex.mmxxvi.entity.TicketItem;
 import codex.mmxxvi.exception.AppExceptions;
 import codex.mmxxvi.repository.TicketRepository;
 import codex.mmxxvi.service.CachingService;
+import codex.mmxxvi.support.InternalApiKeyService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -21,6 +22,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.ReactiveSecurityContextHolder;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -59,11 +61,20 @@ class TicketServiceImplTest {
     @Mock
     private CachingService cachingService;
 
+    @Mock
+    private MongoTemplate mongoTemplate;
+
     private TicketServiceImpl ticketService;
 
     @BeforeEach
     void setUp() {
-        ticketService = new TicketServiceImpl(ticketRepository, ticketSearchIndexClient, cachingService);
+        ticketService = new TicketServiceImpl(
+                ticketRepository,
+                ticketSearchIndexClient,
+                cachingService,
+                mongoTemplate,
+                new InternalApiKeyService("internal-test-key")
+        );
     }
 
     @Test
@@ -132,7 +143,7 @@ class TicketServiceImplTest {
         assertThat(response.getTicketItems()).hasSize(1);
         assertThat(response.getTicketItems().getFirst().getTicketId()).isEqualTo(response.getId());
         assertThat(response.getTicketItems().getFirst().getName()).isEqualTo("Soft Seat");
-        verify(ticketSearchIndexClient).indexTicket(eq("Bearer ticket-token"), any());
+        verify(ticketSearchIndexClient).indexTicket(eq("internal-test-key"), any());
         verify(cachingService).delete("ticket-service:tickets:" + response.getId());
         verify(cachingService).deleteByPattern("ticket-service:tickets:pages:*");
     }
@@ -152,9 +163,9 @@ class TicketServiceImplTest {
 
         assertThat(response.getTitle()).isEqualTo("New title");
 
-        ArgumentCaptor<codex.mmxxvi.client.search.dto.IndexTicketRequest> requestCaptor =
-                ArgumentCaptor.forClass(codex.mmxxvi.client.search.dto.IndexTicketRequest.class);
-        verify(ticketSearchIndexClient).indexTicket(eq("Bearer ticket-token"), requestCaptor.capture());
+        ArgumentCaptor<codex.mmxxvi.dto.integration.search.IndexTicketRequest> requestCaptor =
+                ArgumentCaptor.forClass(codex.mmxxvi.dto.integration.search.IndexTicketRequest.class);
+        verify(ticketSearchIndexClient).indexTicket(eq("internal-test-key"), requestCaptor.capture());
         assertThat(requestCaptor.getValue().getId()).isEqualTo(TICKET_ID);
         assertThat(requestCaptor.getValue().getTitle()).isEqualTo("New title");
         verify(cachingService).delete("ticket-service:tickets:" + TICKET_ID);
@@ -208,7 +219,7 @@ class TicketServiceImplTest {
         withAuth(ticketService.deleteTicket(TICKET_ID), USER_ID, 1, "ticket.write");
 
         verify(ticketRepository).deleteById(TICKET_ID);
-        verify(ticketSearchIndexClient).deleteTicket("Bearer ticket-token", TICKET_ID);
+        verify(ticketSearchIndexClient).deleteTicket("internal-test-key", TICKET_ID);
     }
 
     private Ticket ticket(String title) {

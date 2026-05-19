@@ -28,6 +28,18 @@ public class Ticket {
     private UUID id = UUID.randomUUID();
 
     private String title;
+    @Field("train_number")
+    private String trainNumber;
+    @Field("departure_station_code")
+    private String departureStationCode;
+    @Field("departure_station_name")
+    private String departureStationName;
+    @Field("arrival_station_code")
+    private String arrivalStationCode;
+    @Field("arrival_station_name")
+    private String arrivalStationName;
+    @Field("journey_note")
+    private String journeyNote;
     @Field("date_start")
     private LocalDateTime dateStart ;
     @Field("date_end")

@@ -1,14 +1,19 @@
 package codex.mmxxvi.services.impl;
 
 import codex.mmxxvi.dto.request.CreateUserRequest;
+import codex.mmxxvi.dto.request.ForgotPasswordRequest;
 import codex.mmxxvi.dto.request.LoginRequest;
 import codex.mmxxvi.dto.request.PageRequestDto;
+import codex.mmxxvi.dto.request.ResetPasswordRequest;
 import codex.mmxxvi.dto.request.UpdateUserRequest;
 import codex.mmxxvi.dto.response.JwtResponse;
 import codex.mmxxvi.dto.response.PageResponse;
+import codex.mmxxvi.dto.response.PasswordResetResponse;
 import codex.mmxxvi.dto.response.UserResponse;
+import codex.mmxxvi.entity.PasswordResetToken;
 import codex.mmxxvi.entity.User;
 import codex.mmxxvi.exception.AppExceptions;
+import codex.mmxxvi.repository.PasswordResetTokenRepository;
 import codex.mmxxvi.repository.UserRepository;
 import codex.mmxxvi.services.JwtService;
 import org.junit.jupiter.api.BeforeEach;
@@ -53,11 +58,20 @@ class UserServiceImplTest {
     @Mock
     private JwtService jwtService;
 
+    @Mock
+    private PasswordResetTokenRepository passwordResetTokenRepository;
+
     private UserServiceImpl userService;
 
     @BeforeEach
     void setUp() {
-        userService = new UserServiceImpl(userRepository, passwordEncoder, jwtService);
+        userService = new UserServiceImpl(
+                userRepository,
+                passwordEncoder,
+                jwtService,
+                passwordResetTokenRepository,
+                true
+        );
     }
 
     @Test
@@ -164,6 +178,43 @@ class UserServiceImplTest {
 
         assertThatThrownBy(() -> userService.refreshAccessToken("bad-token").block())
                 .isInstanceOf(AppExceptions.UnauthorizedException.class);
+    }
+
+    @Test
+    void requestPasswordResetReturnsPreviewTokenWhenUserExists() {
+        User user = user("alice", "alice@example.com", "encoded-password", 0);
+        when(userRepository.findByEmail("alice@example.com")).thenReturn(Optional.of(user));
+        when(passwordResetTokenRepository.save(any(PasswordResetToken.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        PasswordResetResponse response = userService.requestPasswordReset(ForgotPasswordRequest.builder()
+                .email("alice@example.com")
+                .build()).block();
+
+        assertThat(response).isNotNull();
+        assertThat(response.getPreviewToken()).isNotBlank();
+        verify(passwordResetTokenRepository).deleteByUserId(USER_ID);
+        verify(passwordResetTokenRepository).save(any(PasswordResetToken.class));
+    }
+
+    @Test
+    void resetPasswordEncodesNewPasswordAndRemovesResetToken() {
+        User user = user("alice", "alice@example.com", "encoded-password", 0);
+        when(passwordResetTokenRepository.findByTokenHash(any()))
+                .thenReturn(Optional.of(PasswordResetToken.builder()
+                        .userId(USER_ID)
+                        .tokenHash("hashed-token")
+                        .expiresAt(java.time.LocalDateTime.now().plusMinutes(5))
+                        .build()));
+        when(userRepository.findById(USER_ID)).thenReturn(Optional.of(user));
+        when(passwordEncoder.encode("Password1!")).thenReturn("new-password");
+
+        userService.resetPassword(ResetPasswordRequest.builder()
+                .token("ABC12345")
+                .password("Password1!")
+                .build()).block();
+
+        verify(userRepository).save(any(User.class));
+        verify(passwordResetTokenRepository).deleteByUserId(USER_ID);
     }
 
     @Test

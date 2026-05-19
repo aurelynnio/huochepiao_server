@@ -13,3 +13,7 @@ spring:
 
 server:
   port: ${SERVER_PORT:8083}
+
+app:
+  internal:
+    api-key: ${APP_INTERNAL_API_KEY:vetau-internal-key}

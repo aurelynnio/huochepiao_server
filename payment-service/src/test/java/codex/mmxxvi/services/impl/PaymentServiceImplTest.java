@@ -1,5 +1,7 @@
 package codex.mmxxvi.services.impl;
 
+import codex.mmxxvi.integration.order.OrderClient;
+import codex.mmxxvi.dto.integration.order.InternalOrderResponse;
 import codex.mmxxvi.config.VNPayConfig;
 import codex.mmxxvi.dto.request.CreatePaymentRequest;
 import codex.mmxxvi.dto.request.PageRequestDto;
@@ -11,6 +13,7 @@ import codex.mmxxvi.dto.response.RefundResponse;
 import codex.mmxxvi.entity.Payment;
 import codex.mmxxvi.exception.AppExceptions;
 import codex.mmxxvi.repository.PaymentRepository;
+import codex.mmxxvi.support.InternalApiKeyService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -51,6 +54,9 @@ class PaymentServiceImplTest {
     @Mock
     private PaymentRepository paymentRepository;
 
+    @Mock
+    private OrderClient orderClient;
+
     private VNPayConfig vnPayConfig;
     private PaymentServiceImpl paymentService;
 
@@ -61,7 +67,12 @@ class PaymentServiceImplTest {
         vnPayConfig.setReturnUrl("/v1/payments/vnpay/callback");
         vnPayConfig.setTmnCode("TESTMERCHANT");
         vnPayConfig.setHashSecret("secret");
-        paymentService = new PaymentServiceImpl(paymentRepository, vnPayConfig);
+        paymentService = new PaymentServiceImpl(
+                paymentRepository,
+                vnPayConfig,
+                orderClient,
+                new InternalApiKeyService("internal-test-key")
+        );
     }
 
     @Test
@@ -72,6 +83,7 @@ class PaymentServiceImplTest {
                 .paymentMethod("COD")
                 .transactionId(TRANSACTION_ID)
                 .build();
+        when(orderClient.getOrder("internal-test-key", ORDER_ID)).thenReturn(order());
         when(paymentRepository.save(any(Payment.class))).thenAnswer(invocation -> {
             Payment payment = invocation.getArgument(0);
             payment.setId(PAYMENT_ID);
@@ -98,6 +110,7 @@ class PaymentServiceImplTest {
                 .paymentMethod("VNPAY")
                 .transactionId(TRANSACTION_ID)
                 .build();
+        when(orderClient.getOrder("internal-test-key", ORDER_ID)).thenReturn(order());
         when(paymentRepository.save(any(Payment.class))).thenAnswer(invocation -> {
             Payment payment = invocation.getArgument(0);
             payment.setId(PAYMENT_ID);
@@ -232,6 +245,18 @@ class PaymentServiceImplTest {
                 .status(status)
                 .transactionId(TRANSACTION_ID)
                 .build();
+    }
+
+    private InternalOrderResponse order() {
+        InternalOrderResponse response = new InternalOrderResponse();
+        response.setId(ORDER_ID);
+        response.setUserId(USER_ID);
+        response.setTicketItemId(UUID.fromString("55555555-5555-5555-5555-555555555555"));
+        response.setQuantity(2);
+        response.setUnitPrice(50_000L);
+        response.setTotalPrice(100_000L);
+        response.setStatus(0);
+        return response;
     }
 
     private MockServerHttpRequest request(String uri) {

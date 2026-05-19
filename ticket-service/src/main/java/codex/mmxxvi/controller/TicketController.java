@@ -3,6 +3,7 @@ package codex.mmxxvi.controller;
 
 import java.util.UUID;
 
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -13,6 +14,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import codex.mmxxvi.dto.internal.AdjustTicketStockRequest;
+import codex.mmxxvi.dto.internal.TicketItemSnapshotResponse;
 import codex.mmxxvi.dto.request.CreateTicketRequest;
 import codex.mmxxvi.dto.request.PageRequestDto;
 import codex.mmxxvi.dto.request.UpdateTicketItemsRequest;
@@ -20,6 +23,7 @@ import codex.mmxxvi.dto.request.UpdateTicketRequest;
 import codex.mmxxvi.dto.response.PageResponse;
 import codex.mmxxvi.dto.response.ResponseTicket;
 import codex.mmxxvi.service.TicketService;
+import codex.mmxxvi.support.InternalApiKeyService;
 import jakarta.validation.Valid;
 import reactor.core.publisher.Mono;
 
@@ -27,9 +31,11 @@ import reactor.core.publisher.Mono;
 @RestController
 public class TicketController {
     private final TicketService ticketService;
+    private final InternalApiKeyService internalApiKeyService;
 
-    public TicketController(TicketService ticketService) {
+    public TicketController(TicketService ticketService, InternalApiKeyService internalApiKeyService) {
         this.ticketService = ticketService;
+        this.internalApiKeyService = internalApiKeyService;
     }
 
 
@@ -56,5 +62,34 @@ public class TicketController {
     @DeleteMapping("/tickets/{id}")
     public Mono<Void> deleteTicket(@PathVariable UUID id) {
         return ticketService.deleteTicket(id);
+    }
+
+    @GetMapping("/internal/ticket-items/{ticketItemId}")
+    public Mono<TicketItemSnapshotResponse> getTicketItemSnapshot(
+            @RequestHeader("X-Internal-Key") String internalKey,
+            @PathVariable UUID ticketItemId
+    ) {
+        internalApiKeyService.validate(internalKey);
+        return ticketService.getTicketItemSnapshot(ticketItemId);
+    }
+
+    @PostMapping("/internal/ticket-items/{ticketItemId}/reserve")
+    public Mono<TicketItemSnapshotResponse> reserveTicketItem(
+            @RequestHeader("X-Internal-Key") String internalKey,
+            @PathVariable UUID ticketItemId,
+            @Valid @RequestBody AdjustTicketStockRequest request
+    ) {
+        internalApiKeyService.validate(internalKey);
+        return ticketService.reserveTicketItem(ticketItemId, request);
+    }
+
+    @PostMapping("/internal/ticket-items/{ticketItemId}/release")
+    public Mono<TicketItemSnapshotResponse> releaseTicketItem(
+            @RequestHeader("X-Internal-Key") String internalKey,
+            @PathVariable UUID ticketItemId,
+            @Valid @RequestBody AdjustTicketStockRequest request
+    ) {
+        internalApiKeyService.validate(internalKey);
+        return ticketService.releaseTicketItem(ticketItemId, request);
     }
 }

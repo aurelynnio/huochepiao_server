@@ -1,6 +1,7 @@
 package codex.mmxxvi.dto.request;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.UUID;
 
 import jakarta.validation.constraints.PositiveOrZero;
@@ -17,6 +18,10 @@ public class UpdateTicketItemRequest {
     private UUID id;
     private String name;
     private String description;
+    private String coachCode;
+    private String seatClass;
+    private String seatType;
+    private List<String> seatLabels;
 
     @PositiveOrZero
     private Integer stockInitial;
@@ -50,6 +55,22 @@ public class UpdateTicketItemRequest {
 
     public Integer getStockInitial() {
         return stockInitial;
+    }
+
+    public String getCoachCode() {
+        return coachCode;
+    }
+
+    public String getSeatClass() {
+        return seatClass;
+    }
+
+    public String getSeatType() {
+        return seatType;
+    }
+
+    public List<String> getSeatLabels() {
+        return seatLabels;
     }
 
     public Integer getStockAvailable() {
