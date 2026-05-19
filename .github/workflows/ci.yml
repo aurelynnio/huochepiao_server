@@ -121,92 +121,145 @@ jobs:
             docker push "$IMAGE_URI"
           done
 
+      - name: Prepare SSH connection
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_PORT: ${{ vars.EC2_PORT }}
+          EC2_SSH_PRIVATE_KEY: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+
+          mkdir -p "$HOME/.ssh"
+          chmod 700 "$HOME/.ssh"
+
+          printf '%s\n' "$EC2_SSH_PRIVATE_KEY" | tr -d '\r' > "$HOME/.ssh/ec2_deploy_key"
+          chmod 600 "$HOME/.ssh/ec2_deploy_key"
+
+          SSH_HOST="$(printf '%s' "$EC2_HOST" | tr -d '\r' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+          SSH_PORT="${EC2_PORT:-22}"
+
+          echo "SSH_HOST=$SSH_HOST" >> "$GITHUB_ENV"
+          echo "SSH_PORT=$SSH_PORT" >> "$GITHUB_ENV"
+          echo "SSH_KEY_PATH=$HOME/.ssh/ec2_deploy_key" >> "$GITHUB_ENV"
+
+          ssh-keyscan -T 30 -p "$SSH_PORT" -H "$SSH_HOST" >> "$HOME/.ssh/known_hosts"
+
+      - name: Verify SSH connectivity
+        env:
+          EC2_USER: ${{ vars.EC2_USER }}
+        run: |
+          set -euo pipefail
+
+          ssh \
+            -i "$SSH_KEY_PATH" \
+            -p "$SSH_PORT" \
+            -o BatchMode=yes \
+            -o ConnectTimeout=30 \
+            -o ServerAliveInterval=15 \
+            -o ServerAliveCountMax=4 \
+            "$EC2_USER@$SSH_HOST" \
+            "echo SSH connection established on \$(hostname)"
+
       - name: Deploy to EC2 via SSH
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ${{ vars.EC2_USER }}
-          key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
-          script_stop: true
-          script: |
-            set -e
+        env:
+          AWS_REGION: ${{ vars.AWS_REGION }}
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
+          IMAGE_TAG: ${{ steps.image.outputs.IMAGE_TAG }}
+          EC2_USER: ${{ vars.EC2_USER }}
+          REMOTE_APP_DIR: /srv/huochepiao
+          REPOSITORY_URL: https://github.com/${{ github.repository }}.git
+        run: |
+          set -euo pipefail
 
-            AWS_REGION="${{ vars.AWS_REGION }}"
-            ECR_REGISTRY="${{ steps.login-ecr.outputs.registry }}"
-            ECR_REPOSITORY="${{ vars.ECR_REPOSITORY }}"
-            IMAGE_TAG="${{ steps.image.outputs.IMAGE_TAG }}"
-            REMOTE_APP_DIR="/srv/huochepiao"
-            REMOTE_BASE_DIR="$(dirname "$REMOTE_APP_DIR")"
-            REPOSITORY_URL="https://github.com/${{ github.repository }}.git"
+          ssh \
+            -i "$SSH_KEY_PATH" \
+            -p "$SSH_PORT" \
+            -o BatchMode=yes \
+            -o ConnectTimeout=30 \
+            -o ServerAliveInterval=15 \
+            -o ServerAliveCountMax=4 \
+            "$EC2_USER@$SSH_HOST" \
+            "bash -se" <<EOF
+          set -euo pipefail
 
-            SERVICES="config-server api-gateway order-service payment-service search-service ticket-service user-service"
+          AWS_REGION="$AWS_REGION"
+          ECR_REGISTRY="$ECR_REGISTRY"
+          ECR_REPOSITORY="$ECR_REPOSITORY"
+          IMAGE_TAG="$IMAGE_TAG"
+          REMOTE_APP_DIR="$REMOTE_APP_DIR"
+          REMOTE_BASE_DIR="\$(dirname "\$REMOTE_APP_DIR")"
+          REPOSITORY_URL="$REPOSITORY_URL"
 
-            echo "Preparing remote app directory..."
-            echo "Remote app directory: $REMOTE_APP_DIR"
+          SERVICES="config-server api-gateway order-service payment-service search-service ticket-service user-service"
 
-            mkdir -p "$REMOTE_BASE_DIR"
+          echo "Preparing remote app directory..."
+          echo "Remote app directory: \$REMOTE_APP_DIR"
 
-            if [ -d "$REMOTE_APP_DIR/.git" ]; then
-              echo "Existing git repository found. Updating it..."
-              cd "$REMOTE_APP_DIR"
-              git fetch origin main
-              git reset --hard origin/main
-            elif [ ! -e "$REMOTE_APP_DIR" ]; then
-              echo "Remote app directory does not exist. Cloning repository..."
-              git clone --branch main "$REPOSITORY_URL" "$REMOTE_APP_DIR"
-              cd "$REMOTE_APP_DIR"
-            elif [ -d "$REMOTE_APP_DIR" ] && [ -z "$(find "$REMOTE_APP_DIR" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null || true)" ]; then
-              echo "Remote app directory is empty. Cloning repository..."
-              rm -rf "$REMOTE_APP_DIR"
-              git clone --branch main "$REPOSITORY_URL" "$REMOTE_APP_DIR"
-              cd "$REMOTE_APP_DIR"
-            else
-              BACKUP_DIR="${REMOTE_APP_DIR}.bak.$(date +%Y%m%d%H%M%S)"
-              echo "$REMOTE_APP_DIR exists, but it is not a git repository."
-              echo "Moving existing directory to $BACKUP_DIR"
-              mv "$REMOTE_APP_DIR" "$BACKUP_DIR"
-              git clone --branch main "$REPOSITORY_URL" "$REMOTE_APP_DIR"
-              cd "$REMOTE_APP_DIR"
-            fi
+          mkdir -p "\$REMOTE_BASE_DIR"
 
-            echo "Logging in to ECR..."
-            aws ecr get-login-password --region "$AWS_REGION" | docker login --username AWS --password-stdin "$ECR_REGISTRY"
+          if [ -d "\$REMOTE_APP_DIR/.git" ]; then
+            echo "Existing git repository found. Updating it..."
+            cd "\$REMOTE_APP_DIR"
+            git fetch origin main
+            git reset --hard origin/main
+          elif [ ! -e "\$REMOTE_APP_DIR" ]; then
+            echo "Remote app directory does not exist. Cloning repository..."
+            git clone --branch main "\$REPOSITORY_URL" "\$REMOTE_APP_DIR"
+            cd "\$REMOTE_APP_DIR"
+          elif [ -d "\$REMOTE_APP_DIR" ] && [ -z "\$(find "\$REMOTE_APP_DIR" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null || true)" ]; then
+            echo "Remote app directory is empty. Cloning repository..."
+            rm -rf "\$REMOTE_APP_DIR"
+            git clone --branch main "\$REPOSITORY_URL" "\$REMOTE_APP_DIR"
+            cd "\$REMOTE_APP_DIR"
+          else
+            BACKUP_DIR="\${REMOTE_APP_DIR}.bak.\$(date +%Y%m%d%H%M%S)"
+            echo "\$REMOTE_APP_DIR exists, but it is not a git repository."
+            echo "Moving existing directory to \$BACKUP_DIR"
+            mv "\$REMOTE_APP_DIR" "\$BACKUP_DIR"
+            git clone --branch main "\$REPOSITORY_URL" "\$REMOTE_APP_DIR"
+            cd "\$REMOTE_APP_DIR"
+          fi
 
-            export ECR_REGISTRY
-            export ECR_REPOSITORY
-            export IMAGE_TAG
+          echo "Logging in to ECR..."
+          aws ecr get-login-password --region "\$AWS_REGION" | docker login --username AWS --password-stdin "\$ECR_REGISTRY"
 
-            if [ ! -f docker-compose.ecr.yml ]; then
-              echo "docker-compose.ecr.yml was not found in $REMOTE_APP_DIR."
-              echo "Create it yourself before deploying, or commit it to the repository."
-              exit 1
-            fi
+          export ECR_REGISTRY
+          export ECR_REPOSITORY
+          export IMAGE_TAG
 
-            echo "Using Docker Compose ECR override:"
-            sed -n '1,80p' docker-compose.ecr.yml
+          if [ ! -f docker-compose.ecr.yml ]; then
+            echo "docker-compose.ecr.yml was not found in \$REMOTE_APP_DIR."
+            echo "Create it yourself before deploying, or commit it to the repository."
+            exit 1
+          fi
 
-            echo "Pulling service images..."
-            for SERVICE in $SERVICES; do
-              IMAGE_URI="${ECR_REGISTRY}/${ECR_REPOSITORY}:${SERVICE}-${IMAGE_TAG}"
-              echo "Pulling $IMAGE_URI"
-              docker pull "$IMAGE_URI"
-            done
+          echo "Using Docker Compose ECR override:"
+          sed -n '1,80p' docker-compose.ecr.yml
 
-            echo "Docker versions:"
-            docker --version
-            docker compose version
+          echo "Pulling service images..."
+          for SERVICE in \$SERVICES; do
+            IMAGE_URI="\${ECR_REGISTRY}/\${ECR_REPOSITORY}:\${SERVICE}-\${IMAGE_TAG}"
+            echo "Pulling \$IMAGE_URI"
+            docker pull "\$IMAGE_URI"
+          done
 
-            echo "Validating Docker Compose files..."
-            docker compose -f docker-compose.yml -f docker-compose.ecr.yml config --quiet
+          echo "Docker versions:"
+          docker --version
+          docker compose version
 
-            echo "Starting services with Docker Compose..."
-            docker compose -f docker-compose.yml -f docker-compose.ecr.yml up -d --no-build
+          echo "Validating Docker Compose files..."
+          docker compose -f docker-compose.yml -f docker-compose.ecr.yml config --quiet
 
-            echo "Service container status:"
-            docker compose -f docker-compose.yml -f docker-compose.ecr.yml ps
+          echo "Starting services with Docker Compose..."
+          docker compose -f docker-compose.yml -f docker-compose.ecr.yml up -d --no-build
 
-            echo "Recent API gateway logs:"
-            docker logs api-gateway --tail=80 || true
+          echo "Service container status:"
+          docker compose -f docker-compose.yml -f docker-compose.ecr.yml ps
 
-            echo "Cleaning old images..."
-            docker image prune -af || true
+          echo "Recent API gateway logs:"
+          docker logs api-gateway --tail=80 || true
+
+          echo "Cleaning old images..."
+          docker image prune -af || true
+          EOF
