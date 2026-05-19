@@ -125,40 +125,101 @@ jobs:
         env:
           EC2_HOST: ${{ secrets.EC2_HOST }}
           EC2_PORT: ${{ vars.EC2_PORT }}
+          EC2_USER: ${{ vars.EC2_USER }}
           EC2_SSH_PRIVATE_KEY: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
         run: |
           set -euo pipefail
 
+          trim() {
+            printf '%s' "$1" | tr -d '\r' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//'
+          }
+
+          SSH_HOST="$(trim "${EC2_HOST:-}")"
+          SSH_PORT_RAW="$(trim "${EC2_PORT:-22}")"
+          SSH_USER="$(trim "${EC2_USER:-}")"
+          SSH_KEY_CONTENT="$(printf '%s' "${EC2_SSH_PRIVATE_KEY:-}" | tr -d '\r')"
+
+          if [ -z "$SSH_HOST" ]; then
+            echo "::error::GitHub secret EC2_HOST is empty or missing."
+            exit 1
+          fi
+
+          if [ -z "$SSH_USER" ]; then
+            echo "::error::GitHub variable EC2_USER is empty or missing."
+            exit 1
+          fi
+
+          if [ -z "$SSH_KEY_CONTENT" ]; then
+            echo "::error::GitHub secret EC2_SSH_PRIVATE_KEY is empty or missing."
+            exit 1
+          fi
+
+          if [[ ! "$SSH_PORT_RAW" =~ ^[0-9]+$ ]] || [ "$SSH_PORT_RAW" -lt 1 ] || [ "$SSH_PORT_RAW" -gt 65535 ]; then
+            echo "::error::EC2_PORT must be a valid TCP port, got '$SSH_PORT_RAW'."
+            exit 1
+          fi
+
+          SSH_PORT="$SSH_PORT_RAW"
+
           mkdir -p "$HOME/.ssh"
           chmod 700 "$HOME/.ssh"
+          touch "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
 
-          printf '%s\n' "$EC2_SSH_PRIVATE_KEY" | tr -d '\r' > "$HOME/.ssh/ec2_deploy_key"
+          printf '%s\n' "$SSH_KEY_CONTENT" > "$HOME/.ssh/ec2_deploy_key"
           chmod 600 "$HOME/.ssh/ec2_deploy_key"
-
-          SSH_HOST="$(printf '%s' "$EC2_HOST" | tr -d '\r' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
-          SSH_PORT="${EC2_PORT:-22}"
 
           echo "SSH_HOST=$SSH_HOST" >> "$GITHUB_ENV"
           echo "SSH_PORT=$SSH_PORT" >> "$GITHUB_ENV"
+          echo "SSH_USER=$SSH_USER" >> "$GITHUB_ENV"
           echo "SSH_KEY_PATH=$HOME/.ssh/ec2_deploy_key" >> "$GITHUB_ENV"
 
-          ssh-keyscan -T 30 -p "$SSH_PORT" -H "$SSH_HOST" >> "$HOME/.ssh/known_hosts"
+          echo "Checking DNS resolution for SSH host..."
+          if ! getent hosts "$SSH_HOST"; then
+            echo "::error::Unable to resolve '$SSH_HOST' from the GitHub runner. Check EC2_HOST."
+            exit 1
+          fi
+
+          echo "Checking TCP connectivity to $SSH_HOST:$SSH_PORT..."
+          if ! timeout 10 bash -c "</dev/tcp/$SSH_HOST/$SSH_PORT" 2>/dev/null; then
+            echo "::error::GitHub runner cannot reach $SSH_HOST:$SSH_PORT. Check the EC2 public host/IP, security group inbound rules, NACLs, and host firewall."
+            exit 1
+          fi
+
+          if ssh-keyscan -T 10 -p "$SSH_PORT" -H "$SSH_HOST" >> "$HOME/.ssh/known_hosts" 2>/dev/null; then
+            echo "SSH host key collected with ssh-keyscan."
+          else
+            echo "::warning::ssh-keyscan timed out. The SSH client will fall back to StrictHostKeyChecking=accept-new."
+          fi
 
       - name: Verify SSH connectivity
-        env:
-          EC2_USER: ${{ vars.EC2_USER }}
         run: |
           set -euo pipefail
 
-          ssh \
-            -i "$SSH_KEY_PATH" \
-            -p "$SSH_PORT" \
-            -o BatchMode=yes \
-            -o ConnectTimeout=30 \
-            -o ServerAliveInterval=15 \
-            -o ServerAliveCountMax=4 \
-            "$EC2_USER@$SSH_HOST" \
-            "echo SSH connection established on \$(hostname)"
+          for attempt in 1 2 3; do
+            if ssh \
+              -i "$SSH_KEY_PATH" \
+              -p "$SSH_PORT" \
+              -o BatchMode=yes \
+              -o ConnectTimeout=30 \
+              -o ConnectionAttempts=3 \
+              -o ServerAliveInterval=15 \
+              -o ServerAliveCountMax=4 \
+              -o StrictHostKeyChecking=accept-new \
+              -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+              "$SSH_USER@$SSH_HOST" \
+              "echo SSH connection established on \$(hostname)"; then
+              exit 0
+            fi
+
+            if [ "$attempt" -lt 3 ]; then
+              echo "SSH attempt $attempt failed. Retrying in 10 seconds..."
+              sleep 10
+            fi
+          done
+
+          echo "::error::Unable to establish SSH session to $SSH_HOST:$SSH_PORT after 3 attempts."
+          exit 1
 
       - name: Deploy to EC2 via SSH
         env:
@@ -166,7 +227,6 @@ jobs:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
           IMAGE_TAG: ${{ steps.image.outputs.IMAGE_TAG }}
-          EC2_USER: ${{ vars.EC2_USER }}
           REMOTE_APP_DIR: /srv/huochepiao
           REPOSITORY_URL: https://github.com/${{ github.repository }}.git
         run: |
@@ -177,9 +237,12 @@ jobs:
             -p "$SSH_PORT" \
             -o BatchMode=yes \
             -o ConnectTimeout=30 \
+            -o ConnectionAttempts=3 \
             -o ServerAliveInterval=15 \
             -o ServerAliveCountMax=4 \
-            "$EC2_USER@$SSH_HOST" \
+            -o StrictHostKeyChecking=accept-new \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$SSH_USER@$SSH_HOST" \
             "bash -se" <<EOF
           set -euo pipefail
 
