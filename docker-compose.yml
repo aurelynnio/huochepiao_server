@@ -1,4 +1,26 @@
 services:
+  discovery-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        MODULE: discovery-service
+    container_name: discovery-service
+    restart: unless-stopped
+    environment:
+      APP_ENV: dev
+      CONFIG_SERVER_URL: http://config-server:8888
+      CONFIG_SERVER_GIT_LABEL: main
+      CONFIG_SERVER_USERNAME: config-client
+      CONFIG_SERVER_PASSWORD: changeit
+    ports:
+      - "8761:8761"
+    depends_on:
+      config-server:
+        condition: service_started
+    networks:
+      - microservice-network
+
   config-server:
     build:
       context: .
@@ -36,9 +58,13 @@ services:
       CONFIG_SERVER_USERNAME: config-client
       CONFIG_SERVER_PASSWORD: changeit
       AUTH_ISSUER_URI: http://user-service:8081
+      EUREKA_CLIENT_ENABLED: "true"
+      EUREKA_DEFAULT_ZONE: http://discovery-service:8761/eureka
     ports:
       - "8080:8080"
     depends_on:
+      discovery-service:
+        condition: service_started
       config-server:
         condition: service_started
       user-service:
@@ -64,7 +90,11 @@ services:
       ORDER_DB_URL: jdbc:mysql://sql-service:3306/order_service?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
       ORDER_DB_USERNAME: root
       ORDER_DB_PASSWORD: 123456
+      EUREKA_CLIENT_ENABLED: "true"
+      EUREKA_DEFAULT_ZONE: http://discovery-service:8761/eureka
     depends_on:
+      discovery-service:
+        condition: service_started
       config-server:
         condition: service_started
       sql-service:
@@ -90,7 +120,11 @@ services:
       PAYMENT_DB_URL: jdbc:mysql://sql-service:3306/payment_service?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
       PAYMENT_DB_USERNAME: root
       PAYMENT_DB_PASSWORD: 123456
+      EUREKA_CLIENT_ENABLED: "true"
+      EUREKA_DEFAULT_ZONE: http://discovery-service:8761/eureka
     depends_on:
+      discovery-service:
+        condition: service_started
       config-server:
         condition: service_started
       sql-service:
@@ -117,7 +151,11 @@ services:
       USER_DB_URL: jdbc:mysql://sql-service:3306/user_service?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
       USER_DB_USERNAME: root
       USER_DB_PASSWORD: 123456
+      EUREKA_CLIENT_ENABLED: "true"
+      EUREKA_DEFAULT_ZONE: http://discovery-service:8761/eureka
     depends_on:
+      discovery-service:
+        condition: service_started
       config-server:
         condition: service_started
       sql-service:
@@ -146,10 +184,17 @@ services:
       REDIS_PORT: 6379
       REDIS_DATABASE: 0
       SPRING_DATA_REDIS_PASSWORD: 123456
+      EUREKA_CLIENT_ENABLED: "true"
+      EUREKA_DEFAULT_ZONE: http://discovery-service:8761/eureka
     depends_on:
-      - config-server
-      - mongodb-service
-      - redis-service
+      config-server:
+        condition: service_started
+      discovery-service:
+        condition: service_started
+      mongodb-service:
+        condition: service_started
+      redis-service:
+        condition: service_started
     networks:
       - microservice-network
 
@@ -169,11 +214,17 @@ services:
       CONFIG_SERVER_PASSWORD: changeit
       AUTH_ISSUER_URI: http://user-service:8081
       SEARCH_MONGODB_URI: mongodb://admin:123456@mongodb-service:27017/search-service?authSource=admin
+      EUREKA_CLIENT_ENABLED: "true"
+      EUREKA_DEFAULT_ZONE: http://discovery-service:8761/eureka
     ports:
       - "8087:8085"
     depends_on:
-      - config-server
-      - mongodb-service
+      config-server:
+        condition: service_started
+      discovery-service:
+        condition: service_started
+      mongodb-service:
+        condition: service_started
     networks:
       - microservice-network
 

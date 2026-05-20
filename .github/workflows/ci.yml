@@ -14,48 +14,41 @@ concurrency:
 permissions:
   contents: read
 
+env:
+  REMOTE_APP_DIR: /srv/huochepiao
+  SERVICES: >-
+    discovery-service
+    config-server
+    api-gateway
+    order-service
+    payment-service
+    search-service
+    ticket-service
+    user-service
+
 jobs:
   test:
-    name: Test
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout source
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Java
-        uses: actions/setup-java@v4
+      - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "21"
           cache: maven
 
-      - name: Run tests
-        run: mvn --no-transfer-progress test
-
-      - name: Upload test reports on failure
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: surefire-reports
-          path: |
-            **/target/surefire-reports/*
+      - run: mvn --no-transfer-progress test
 
   docker-check:
-    name: Docker Build Check
     runs-on: ubuntu-latest
     needs: test
-
     steps:
-      - name: Checkout source
-        uses: actions/checkout@v4
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Validate service images
-        run: |
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - run: |
           docker compose build \
+            discovery-service \
             config-server \
             api-gateway \
             order-service \
@@ -65,448 +58,106 @@ jobs:
             user-service
 
   deploy:
-    name: Push ECR and Deploy EC2
     runs-on: ubuntu-latest
     needs: docker-check
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
 
     steps:
-      - name: Checkout source
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+      - uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ vars.AWS_REGION }}
 
-      - name: Login to Amazon ECR
-        id: login-ecr
+      - id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
       - name: Set image tag
-        id: image
         run: |
-          SHORT_SHA=$(echo "${GITHUB_SHA}" | cut -c1-7)
-          IMAGE_TAG="sha-${SHORT_SHA}-${GITHUB_RUN_NUMBER}-${GITHUB_RUN_ATTEMPT}"
+          SHORT_SHA="$(echo "${GITHUB_SHA}" | cut -c1-7)"
+          echo "IMAGE_TAG=sha-${SHORT_SHA}-${GITHUB_RUN_NUMBER}-${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_ENV"
 
-          echo "IMAGE_TAG=$IMAGE_TAG" >> $GITHUB_ENV
-          echo "IMAGE_TAG=$IMAGE_TAG" >> $GITHUB_OUTPUT
-
-      - name: Build and push service images
+      - name: Build and push images
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
         run: |
-          set -e
-
-          SERVICES=(
-            config-server
-            api-gateway
-            order-service
-            payment-service
-            search-service
-            ticket-service
-            user-service
-          )
-
-          for SERVICE in "${SERVICES[@]}"; do
-            IMAGE_URI="${{ steps.login-ecr.outputs.registry }}/${{ vars.ECR_REPOSITORY }}:${SERVICE}-${IMAGE_TAG}"
-
-            echo "Building $SERVICE as $IMAGE_URI"
-            docker build \
-              --build-arg MODULE="$SERVICE" \
-              -t "$IMAGE_URI" \
-              .
-
-            echo "Pushing $SERVICE"
+          set -euo pipefail
+          for SERVICE in $SERVICES; do
+            IMAGE_URI="${ECR_REGISTRY}/${ECR_REPOSITORY}:${SERVICE}-${IMAGE_TAG}"
+            docker build --build-arg MODULE="$SERVICE" -t "$IMAGE_URI" .
             docker push "$IMAGE_URI"
           done
 
-      - name: Resolve deploy transport
-        id: deploy-method
-        env:
-          EC2_INSTANCE_ID: ${{ vars.EC2_INSTANCE_ID }}
-        run: |
-          set -euo pipefail
-
-          trim() {
-            printf '%s' "$1" | tr -d '\r' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//'
-          }
-
-          INSTANCE_ID="$(trim "${EC2_INSTANCE_ID:-}")"
-
-          if [ -n "$INSTANCE_ID" ]; then
-            echo "transport=ssm" >> "$GITHUB_OUTPUT"
-            echo "Using AWS SSM deploy transport for instance $INSTANCE_ID."
-          else
-            echo "transport=ssh" >> "$GITHUB_OUTPUT"
-            echo "EC2_INSTANCE_ID is not set. Falling back to SSH deploy transport."
-          fi
-
-      - name: Prepare SSH connection
-        if: steps.deploy-method.outputs.transport == 'ssh'
-        env:
-          EC2_HOST: ${{ secrets.EC2_HOST }}
-          EC2_PORT: ${{ vars.EC2_PORT }}
-          EC2_USER: ${{ vars.EC2_USER }}
-          EC2_SSH_PRIVATE_KEY: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
-        run: |
-          set -euo pipefail
-
-          trim() {
-            printf '%s' "$1" | tr -d '\r' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//'
-          }
-
-          SSH_HOST="$(trim "${EC2_HOST:-}")"
-          SSH_PORT_RAW="$(trim "${EC2_PORT:-22}")"
-          SSH_USER="$(trim "${EC2_USER:-}")"
-          SSH_KEY_CONTENT="$(printf '%s' "${EC2_SSH_PRIVATE_KEY:-}" | tr -d '\r')"
-
-          if [ -z "$SSH_HOST" ]; then
-            echo "::error::GitHub secret EC2_HOST is empty or missing."
-            exit 1
-          fi
-
-          if [ -z "$SSH_USER" ]; then
-            echo "::error::GitHub variable EC2_USER is empty or missing."
-            exit 1
-          fi
-
-          if [ -z "$SSH_KEY_CONTENT" ]; then
-            echo "::error::GitHub secret EC2_SSH_PRIVATE_KEY is empty or missing."
-            exit 1
-          fi
-
-          if [[ ! "$SSH_PORT_RAW" =~ ^[0-9]+$ ]] || [ "$SSH_PORT_RAW" -lt 1 ] || [ "$SSH_PORT_RAW" -gt 65535 ]; then
-            echo "::error::EC2_PORT must be a valid TCP port, got '$SSH_PORT_RAW'."
-            exit 1
-          fi
-
-          SSH_PORT="$SSH_PORT_RAW"
-
-          mkdir -p "$HOME/.ssh"
-          chmod 700 "$HOME/.ssh"
-          touch "$HOME/.ssh/known_hosts"
-          chmod 600 "$HOME/.ssh/known_hosts"
-
-          printf '%s\n' "$SSH_KEY_CONTENT" > "$HOME/.ssh/ec2_deploy_key"
-          chmod 600 "$HOME/.ssh/ec2_deploy_key"
-
-          echo "SSH_HOST=$SSH_HOST" >> "$GITHUB_ENV"
-          echo "SSH_PORT=$SSH_PORT" >> "$GITHUB_ENV"
-          echo "SSH_USER=$SSH_USER" >> "$GITHUB_ENV"
-          echo "SSH_KEY_PATH=$HOME/.ssh/ec2_deploy_key" >> "$GITHUB_ENV"
-
-          echo "Checking DNS resolution for SSH host..."
-          if ! getent hosts "$SSH_HOST"; then
-            echo "::error::Unable to resolve '$SSH_HOST' from the GitHub runner. Check EC2_HOST."
-            exit 1
-          fi
-
-          echo "Checking TCP connectivity to $SSH_HOST:$SSH_PORT..."
-          if ! timeout 10 bash -c "</dev/tcp/$SSH_HOST/$SSH_PORT" 2>/dev/null; then
-            echo "::error::GitHub runner cannot reach $SSH_HOST:$SSH_PORT. Check the EC2 public host/IP, security group inbound rules, NACLs, and host firewall."
-            exit 1
-          fi
-
-          if ssh-keyscan -T 10 -p "$SSH_PORT" -H "$SSH_HOST" >> "$HOME/.ssh/known_hosts" 2>/dev/null; then
-            echo "SSH host key collected with ssh-keyscan."
-          else
-            echo "::warning::ssh-keyscan timed out. The SSH client will fall back to StrictHostKeyChecking=accept-new."
-          fi
-
-      - name: Verify SSH connectivity
-        if: steps.deploy-method.outputs.transport == 'ssh'
-        run: |
-          set -euo pipefail
-
-          for attempt in 1 2 3; do
-            if ssh \
-              -i "$SSH_KEY_PATH" \
-              -p "$SSH_PORT" \
-              -o BatchMode=yes \
-              -o ConnectTimeout=30 \
-              -o ConnectionAttempts=3 \
-              -o ServerAliveInterval=15 \
-              -o ServerAliveCountMax=4 \
-              -o StrictHostKeyChecking=accept-new \
-              -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
-              "$SSH_USER@$SSH_HOST" \
-              "echo SSH connection established on \$(hostname)"; then
-              exit 0
-            fi
-
-            if [ "$attempt" -lt 3 ]; then
-              echo "SSH attempt $attempt failed. Retrying in 10 seconds..."
-              sleep 10
-            fi
-          done
-
-          echo "::error::Unable to establish SSH session to $SSH_HOST:$SSH_PORT after 3 attempts."
-          exit 1
-
-      - name: Deploy to EC2 via SSH
-        if: steps.deploy-method.outputs.transport == 'ssh'
+      - name: Deploy via SSH
         env:
           AWS_REGION: ${{ vars.AWS_REGION }}
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_PORT: ${{ vars.EC2_PORT }}
+          EC2_SSH_PRIVATE_KEY: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
+          EC2_USER: ${{ vars.EC2_USER }}
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
-          IMAGE_TAG: ${{ steps.image.outputs.IMAGE_TAG }}
-          REMOTE_APP_DIR: /srv/huochepiao
           REPOSITORY_URL: https://github.com/${{ github.repository }}.git
         run: |
           set -euo pipefail
 
-          ssh \
-            -i "$SSH_KEY_PATH" \
-            -p "$SSH_PORT" \
-            -o BatchMode=yes \
-            -o ConnectTimeout=30 \
-            -o ConnectionAttempts=3 \
-            -o ServerAliveInterval=15 \
-            -o ServerAliveCountMax=4 \
-            -o StrictHostKeyChecking=accept-new \
-            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
-            "$SSH_USER@$SSH_HOST" \
-            "bash -se" <<EOF
-          set -euo pipefail
+          trim() {
+            printf '%s' "$1" | tr -d '\r' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//'
+          }
 
+          REMOTE_COMMANDS=$(cat <<EOF
           AWS_REGION="$AWS_REGION"
           ECR_REGISTRY="$ECR_REGISTRY"
           ECR_REPOSITORY="$ECR_REPOSITORY"
           IMAGE_TAG="$IMAGE_TAG"
           REMOTE_APP_DIR="$REMOTE_APP_DIR"
-          REMOTE_BASE_DIR="\$(dirname "\$REMOTE_APP_DIR")"
           REPOSITORY_URL="$REPOSITORY_URL"
-
-          SERVICES="config-server api-gateway order-service payment-service search-service ticket-service user-service"
-
-          echo "Preparing remote app directory..."
-          echo "Remote app directory: \$REMOTE_APP_DIR"
+          REMOTE_BASE_DIR="\$(dirname "\$REMOTE_APP_DIR")"
 
           mkdir -p "\$REMOTE_BASE_DIR"
 
-          if [ -d "\$REMOTE_APP_DIR/.git" ]; then
-            echo "Existing git repository found. Updating it..."
-            cd "\$REMOTE_APP_DIR"
-            git fetch origin main
-            git reset --hard origin/main
-          elif [ ! -e "\$REMOTE_APP_DIR" ]; then
-            echo "Remote app directory does not exist. Cloning repository..."
-            git clone --branch main "\$REPOSITORY_URL" "\$REMOTE_APP_DIR"
-            cd "\$REMOTE_APP_DIR"
-          elif [ -d "\$REMOTE_APP_DIR" ] && [ -z "\$(find "\$REMOTE_APP_DIR" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null || true)" ]; then
-            echo "Remote app directory is empty. Cloning repository..."
+          if [ ! -d "\$REMOTE_APP_DIR/.git" ]; then
             rm -rf "\$REMOTE_APP_DIR"
             git clone --branch main "\$REPOSITORY_URL" "\$REMOTE_APP_DIR"
-            cd "\$REMOTE_APP_DIR"
-          else
-            BACKUP_DIR="\${REMOTE_APP_DIR}.bak.\$(date +%Y%m%d%H%M%S)"
-            echo "\$REMOTE_APP_DIR exists, but it is not a git repository."
-            echo "Moving existing directory to \$BACKUP_DIR"
-            mv "\$REMOTE_APP_DIR" "\$BACKUP_DIR"
-            git clone --branch main "\$REPOSITORY_URL" "\$REMOTE_APP_DIR"
-            cd "\$REMOTE_APP_DIR"
           fi
 
-          echo "Logging in to ECR..."
+          cd "\$REMOTE_APP_DIR"
+          git fetch origin main
+          git reset --hard origin/main
+
           aws ecr get-login-password --region "\$AWS_REGION" | docker login --username AWS --password-stdin "\$ECR_REGISTRY"
 
           export ECR_REGISTRY
           export ECR_REPOSITORY
           export IMAGE_TAG
 
-          if [ ! -f docker-compose.ecr.yml ]; then
-            echo "docker-compose.ecr.yml was not found in \$REMOTE_APP_DIR."
-            echo "Create it yourself before deploying, or commit it to the repository."
-            exit 1
-          fi
-
-          echo "Using Docker Compose ECR override:"
-          sed -n '1,80p' docker-compose.ecr.yml
-
-          echo "Pulling service images..."
-          for SERVICE in \$SERVICES; do
-            IMAGE_URI="\${ECR_REGISTRY}/\${ECR_REPOSITORY}:\${SERVICE}-\${IMAGE_TAG}"
-            echo "Pulling \$IMAGE_URI"
-            docker pull "\$IMAGE_URI"
-          done
-
-          echo "Docker versions:"
-          docker --version
-          docker compose version
-
-          echo "Validating Docker Compose files..."
-          docker compose -f docker-compose.yml -f docker-compose.ecr.yml config --quiet
-
-          echo "Starting services with Docker Compose..."
-          docker compose -f docker-compose.yml -f docker-compose.ecr.yml up -d --no-build
-
-          echo "Service container status:"
-          docker compose -f docker-compose.yml -f docker-compose.ecr.yml ps
-
-          echo "Recent API gateway logs:"
-          docker logs api-gateway --tail=80 || true
-
-          echo "Cleaning old images..."
-          docker image prune -af || true
+          docker compose -f docker-compose.yml -f docker-compose.ecr.yml pull
+          docker compose -f docker-compose.yml -f docker-compose.ecr.yml up -d --remove-orphans
           EOF
+          )
 
-      - name: Deploy to EC2 via SSM
-        if: steps.deploy-method.outputs.transport == 'ssm'
-        env:
-          AWS_REGION: ${{ vars.AWS_REGION }}
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
-          IMAGE_TAG: ${{ steps.image.outputs.IMAGE_TAG }}
-          EC2_INSTANCE_ID: ${{ vars.EC2_INSTANCE_ID }}
-          REMOTE_APP_DIR: /srv/huochepiao
-          REPOSITORY_URL: https://github.com/${{ github.repository }}.git
-        run: |
-          set -euo pipefail
+          SSH_HOST="$(trim "${EC2_HOST:-}")"
+          SSH_PORT="$(trim "${EC2_PORT:-22}")"
+          SSH_USER="$(trim "${EC2_USER:-}")"
+          SSH_KEY_CONTENT="$(printf '%s' "${EC2_SSH_PRIVATE_KEY:-}" | tr -d '\r')"
 
-          trim() {
-            printf '%s' "$1" | tr -d '\r' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//'
-          }
-
-          INSTANCE_ID="$(trim "${EC2_INSTANCE_ID:-}")"
-
-          if [ -z "$INSTANCE_ID" ]; then
-            echo "::error::GitHub variable EC2_INSTANCE_ID is empty or missing."
+          if [ -z "$SSH_HOST" ] || [ -z "$SSH_USER" ] || [ -z "$SSH_KEY_CONTENT" ]; then
+            echo "::error::SSH deploy is missing EC2_HOST, EC2_USER, or EC2_SSH_PRIVATE_KEY."
             exit 1
           fi
 
-          PING_STATUS="$(aws ssm describe-instance-information \
-            --region "$AWS_REGION" \
-            --filters "Key=InstanceIds,Values=$INSTANCE_ID" \
-            --query 'InstanceInformationList[0].PingStatus' \
-            --output text)"
+          mkdir -p "$HOME/.ssh"
+          chmod 700 "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY_CONTENT" > "$HOME/.ssh/ec2_deploy_key"
+          chmod 600 "$HOME/.ssh/ec2_deploy_key"
 
-          if [ -z "$PING_STATUS" ] || [ "$PING_STATUS" = "None" ] || [ "$PING_STATUS" = "null" ]; then
-            echo "::error::Instance $INSTANCE_ID is not registered with AWS Systems Manager. Install/start amazon-ssm-agent and attach an IAM role with SSM permissions."
-            exit 1
-          fi
-
-          echo "SSM ping status for $INSTANCE_ID: $PING_STATUS"
-
-          cat > /tmp/build_ssm_payload.py <<'PY'
-          import json
-          import os
-          from pathlib import Path
-
-          commands = [
-              "set -euo pipefail",
-              f'AWS_REGION="{os.environ["AWS_REGION"]}"',
-              f'ECR_REGISTRY="{os.environ["ECR_REGISTRY"]}"',
-              f'ECR_REPOSITORY="{os.environ["ECR_REPOSITORY"]}"',
-              f'IMAGE_TAG="{os.environ["IMAGE_TAG"]}"',
-              f'REMOTE_APP_DIR="{os.environ["REMOTE_APP_DIR"]}"',
-              'REMOTE_BASE_DIR="$(dirname "$REMOTE_APP_DIR")"',
-              f'REPOSITORY_URL="{os.environ["REPOSITORY_URL"]}"',
-              'SERVICES="config-server api-gateway order-service payment-service search-service ticket-service user-service"',
-              'echo "Preparing remote app directory..."',
-              'echo "Remote app directory: $REMOTE_APP_DIR"',
-              'mkdir -p "$REMOTE_BASE_DIR"',
-              'if [ -d "$REMOTE_APP_DIR/.git" ]; then',
-              '  echo "Existing git repository found. Updating it..."',
-              '  cd "$REMOTE_APP_DIR"',
-              '  git fetch origin main',
-              '  git reset --hard origin/main',
-              'elif [ ! -e "$REMOTE_APP_DIR" ]; then',
-              '  echo "Remote app directory does not exist. Cloning repository..."',
-              '  git clone --branch main "$REPOSITORY_URL" "$REMOTE_APP_DIR"',
-              '  cd "$REMOTE_APP_DIR"',
-              'elif [ -d "$REMOTE_APP_DIR" ] && [ -z "$(find "$REMOTE_APP_DIR" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null || true)" ]; then',
-              '  echo "Remote app directory is empty. Cloning repository..."',
-              '  rm -rf "$REMOTE_APP_DIR"',
-              '  git clone --branch main "$REPOSITORY_URL" "$REMOTE_APP_DIR"',
-              '  cd "$REMOTE_APP_DIR"',
-              'else',
-              '  BACKUP_DIR="${REMOTE_APP_DIR}.bak.$(date +%Y%m%d%H%M%S)"',
-              '  echo "$REMOTE_APP_DIR exists, but it is not a git repository."',
-              '  echo "Moving existing directory to $BACKUP_DIR"',
-              '  mv "$REMOTE_APP_DIR" "$BACKUP_DIR"',
-              '  git clone --branch main "$REPOSITORY_URL" "$REMOTE_APP_DIR"',
-              '  cd "$REMOTE_APP_DIR"',
-              'fi',
-              'echo "Logging in to ECR..."',
-              'aws ecr get-login-password --region "$AWS_REGION" | docker login --username AWS --password-stdin "$ECR_REGISTRY"',
-              'export ECR_REGISTRY',
-              'export ECR_REPOSITORY',
-              'export IMAGE_TAG',
-              'if [ ! -f docker-compose.ecr.yml ]; then',
-              '  echo "docker-compose.ecr.yml was not found in $REMOTE_APP_DIR."',
-              '  echo "Create it yourself before deploying, or commit it to the repository."',
-              '  exit 1',
-              'fi',
-              'echo "Using Docker Compose ECR override:"',
-              "sed -n '1,80p' docker-compose.ecr.yml",
-              'echo "Pulling service images..."',
-              'for SERVICE in $SERVICES; do',
-              '  IMAGE_URI="${ECR_REGISTRY}/${ECR_REPOSITORY}:${SERVICE}-${IMAGE_TAG}"',
-              '  echo "Pulling $IMAGE_URI"',
-              '  docker pull "$IMAGE_URI"',
-              'done',
-              'echo "Docker versions:"',
-              'docker --version',
-              'docker compose version',
-              'echo "Validating Docker Compose files..."',
-              'docker compose -f docker-compose.yml -f docker-compose.ecr.yml config --quiet',
-              'echo "Starting services with Docker Compose..."',
-              'docker compose -f docker-compose.yml -f docker-compose.ecr.yml up -d --no-build',
-              'echo "Service container status:"',
-              'docker compose -f docker-compose.yml -f docker-compose.ecr.yml ps',
-              'echo "Recent API gateway logs:"',
-              'docker logs api-gateway --tail=80 || true',
-              'echo "Cleaning old images..."',
-              'docker image prune -af || true',
-          ]
-
-          Path("/tmp/ssm-commands.json").write_text(json.dumps({"commands": commands}), encoding="utf-8")
-          PY
-
-          python /tmp/build_ssm_payload.py
-
-          COMMAND_ID="$(aws ssm send-command \
-            --region "$AWS_REGION" \
-            --instance-ids "$INSTANCE_ID" \
-            --document-name "AWS-RunShellScript" \
-            --comment "Deploy ${GITHUB_REPOSITORY}@${GITHUB_SHA}" \
-            --parameters file:///tmp/ssm-commands.json \
-            --query 'Command.CommandId' \
-            --output text)"
-
-          echo "SSM command id: $COMMAND_ID"
-
-          aws ssm wait command-executed \
-            --region "$AWS_REGION" \
-            --command-id "$COMMAND_ID" \
-            --instance-id "$INSTANCE_ID"
-
-          STATUS="$(aws ssm get-command-invocation \
-            --region "$AWS_REGION" \
-            --command-id "$COMMAND_ID" \
-            --instance-id "$INSTANCE_ID" \
-            --query 'Status' \
-            --output text)"
-
-          echo "SSM command status: $STATUS"
-          echo "SSM standard output:"
-          aws ssm get-command-invocation \
-            --region "$AWS_REGION" \
-            --command-id "$COMMAND_ID" \
-            --instance-id "$INSTANCE_ID" \
-            --query 'StandardOutputContent' \
-            --output text || true
-
-          echo "SSM standard error:"
-          aws ssm get-command-invocation \
-            --region "$AWS_REGION" \
-            --command-id "$COMMAND_ID" \
-            --instance-id "$INSTANCE_ID" \
-            --query 'StandardErrorContent' \
-            --output text || true
-
-          if [ "$STATUS" != "Success" ]; then
-            echo "::error::SSM deployment failed with status $STATUS."
-            exit 1
-          fi
+          ssh -i "$HOME/.ssh/ec2_deploy_key" \
+            -p "$SSH_PORT" \
+            -o BatchMode=yes \
+            -o ConnectTimeout=30 \
+            -o StrictHostKeyChecking=accept-new \
+            "$SSH_USER@$SSH_HOST" \
+            "bash -se" <<<"$REMOTE_COMMANDS"
